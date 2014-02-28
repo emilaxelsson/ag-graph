@@ -1,2 +1,3 @@
 #!/bin/sh
-cabal bench --benchmark-option=--summary=report.csv --benchmark-option=-oreport.html
+cabal bench
+# cabal bench --benchmark-option=--summary=report.csv --benchmark-option=-oreport.html
