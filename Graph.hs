@@ -29,6 +29,7 @@ module Graph
     , unravelGraph
     , appGraphCxt
     , reifyGraph
+    , reifyDAG
     , graphCata
     , graphEdges
     , lookupNode
@@ -171,6 +172,39 @@ findNodes (In !j) = do
                         modify (\s -> s{ rsNext = var + 1
                                        , rsStable = HashMap.insert st var tab})
                         res <- Traversable.mapM findNodes j
+                        modify (\s -> s { rsEqs = IntMap.insert var res (rsEqs s)})
+                        return var
+
+
+-- | This function takes a term, and returns a 'Graph' with the
+-- implicit sharing of the input data structure made
+-- explicit. Moreover it checks that the constructed graph is acyclic
+-- and only returns the graph it is acyclic.
+reifyDAG :: Traversable f => Tree f -> IO (Maybe (Graph f))
+reifyDAG m = do res <- runErrorT (runStateT (runReaderT (findNodes' m) HashSet.empty) init)
+                case res of 
+                  Left _ -> return Nothing
+                  Right (root, state) ->return (Just (Graph root (rsEqs state) (rsNext state)))
+    where  init = ReifyState
+                  { rsStable = HashMap.empty
+                  , rsEqs = IntMap.empty
+                  , rsNext = 0 }
+
+
+findNodes' :: Traversable f => Tree f -> 
+              ReaderT (HashSet (StableName (f (Tree f))))  
+               (StateT (ReifyState f) (ErrorT String IO)) Node
+findNodes' (In !j) = do
+        st <- liftIO $ makeStableName j
+        seen <- ask
+        when (HashSet.member st seen) (throwError "")
+        tab <- liftM rsStable get
+        case HashMap.lookup st tab of
+          Just var -> return $ var
+          Nothing -> do var <- liftM rsNext get
+                        modify (\s -> s{ rsNext = var + 1
+                                       , rsStable = HashMap.insert st var tab})
+                        res <- local (HashSet.insert st) (Traversable.mapM findNodes' j)
                         modify (\s -> s { rsEqs = IntMap.insert var res (rsEqs s)})
                         return var
 
