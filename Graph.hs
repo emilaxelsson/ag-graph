@@ -49,13 +49,12 @@ module Graph
 
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
-import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as HashMap
+import Data.HashMap.Lazy (HashMap)
+import qualified Data.HashMap.Lazy as HashMap
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import qualified Data.IntMap.Strict as Strict
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import Data.Map (Map)
@@ -97,14 +96,14 @@ appGraphCxt (GraphCxt (Graph root eqs nx) (holes)) = Graph root' eqs' nx'
     where run :: Node -> Graph f -> AppT f -> AppT f
           run n (Graph r e nx) (next,rename,neweqs) =
               (next+nx,
-               Strict.insert n (r+next) rename,
-               [(left + next, fmap (+next) right) | (left , right ) <- Strict.toList e] ++ neweqs)
+               IntMap.insert n (r+next) rename,
+               [(left + next, fmap (+next) right) | (left , right ) <- IntMap.toList e] ++ neweqs)
           init :: AppT g
-          init = (nx,Strict.empty, [])
-          (nx',rename,new)= Strict.foldrWithKey run init holes
+          init = (nx,IntMap.empty, [])
+          (nx',rename,new)= IntMap.foldrWithKey run init holes
           renameFun :: Node -> Node
-          renameFun n = Strict.findWithDefault n n rename
-          eqs' = foldl (\ m (k,v) -> Strict.insert k v m) (Strict.map (fmap renameFun) eqs) new
+          renameFun n = IntMap.findWithDefault n n rename
+          eqs' = foldl (\ m (k,v) -> IntMap.insert k v m) (IntMap.map (fmap renameFun) eqs) new
           root' = renameFun root
 
 -- | This function turns a term into a graph without (explicit)
@@ -121,7 +120,7 @@ termTree t = Graph 0 imap nx
           build (In t) = do n <- get
                             put (n+1)
                             res <- Traversable.mapM build t
-                            tell $ Strict.singleton n res
+                            tell $ IntMap.singleton n res
                             return n
 
 -- | This function unravels a given graph to the term it
@@ -149,7 +148,7 @@ graphCata alg g = run (_root g)
 -- the invariant that each such node must also be in the domain of the
 -- IntMap of the graph.
 lookupNode :: Node -> IntMap (f Node) -> f Node
-lookupNode n imap = fromJustNote "edge leading to an undefined node" $ Strict.lookup n imap
+lookupNode n imap = fromJustNote "edge leading to an undefined node" $ IntMap.lookup n imap
 
 -- | This function takes a term, and returns a 'Graph' with the
 -- implicit sharing of the input data structure made explicit.
@@ -158,7 +157,7 @@ reifyGraph m = do (root, state) <- runStateT (findNodes m) init
                   return (Graph root (rsEqs state) (rsNext state))
     where  init = ReifyState
                   { rsStable = HashMap.empty
-                  , rsEqs = Strict.empty
+                  , rsEqs = IntMap.empty
                   , rsNext = 0 }
 
 data ReifyState f = ReifyState
@@ -177,7 +176,7 @@ findNodes (In !j) = do
                         modify (\s -> s{ rsNext = var + 1
                                        , rsStable = HashMap.insert st var tab})
                         res <- Traversable.mapM findNodes j
-                        modify (\s -> s { rsEqs = Strict.insert var res (rsEqs s)})
+                        modify (\s -> s { rsEqs = IntMap.insert var res (rsEqs s)})
                         return var
 
 
@@ -192,7 +191,7 @@ reifyDAG m = do res <- runErrorT (runStateT (runReaderT (findNodes' m) HashSet.e
                   Right (root, state) ->return (Just (Graph root (rsEqs state) (rsNext state)))
     where  init = ReifyState
                   { rsStable = HashMap.empty
-                  , rsEqs = Strict.empty
+                  , rsEqs = IntMap.empty
                   , rsNext = 0 }
 
 
@@ -210,7 +209,7 @@ findNodes' (In !j) = do
                         modify (\s -> s{ rsNext = var + 1
                                        , rsStable = HashMap.insert st var tab})
                         res <- local (HashSet.insert st) (Traversable.mapM findNodes' j)
-                        modify (\s -> s { rsEqs = Strict.insert var res (rsEqs s)})
+                        modify (\s -> s { rsEqs = IntMap.insert var res (rsEqs s)})
                         return var
 
 
@@ -220,14 +219,14 @@ instance (Show (f String), Functor f) => Show (Graph f)
     show (Graph r es _) = unwords
         [ "mkGraph"
         , show r
-        , showLst ["(" ++ show n ++ "," ++ show (fmap show f) ++ ")" | (n,f) <- Strict.toList es ]
+        , showLst ["(" ++ show n ++ "," ++ show (fmap show f) ++ ")" | (n,f) <- IntMap.toList es ]
         ]
       where
         showLst ss = "[" ++ intercalate "," ss ++ "]"
 
 -- | Construct a graph
 mkGraph :: Node -> [(Node, f Node)] -> Graph f
-mkGraph r es = Graph r (Strict.fromList es) (maximum (map fst es) + 1)
+mkGraph r es = Graph r (IntMap.fromList es) (maximum (map fst es) + 1)
 
 -- | Lift an 'IntMap.IntMap' operation to a 'Graph'. Assumes that the function does not affect the
 -- set of keys.
