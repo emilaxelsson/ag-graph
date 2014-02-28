@@ -1,0 +1,24 @@
+name:                ag-graph
+version:             0.1
+synopsis:            Attribute grammars on graphs
+license:             BSD3
+license-file:        LICENSE
+author:              Patrick Bahr and Emil Axelsson
+copyright:           Copyright (c) 2014 Patrick Bahr and Emil Axelsson
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  exposed-modules:
+    AG,
+    Graph,
+    Paper
+
+  build-depends:
+    base <5,
+    containers,
+    unordered-containers,
+    mtl,
+    safe
+
+  default-language: Haskell2010

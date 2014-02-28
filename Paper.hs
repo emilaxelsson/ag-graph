@@ -6,6 +6,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
+module Paper where
+
+
+
 import Data.Foldable (Foldable)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
