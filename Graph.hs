@@ -64,9 +64,8 @@ import qualified Data.Traversable as Traversable
 import Data.List (intercalate)
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad.Error
 import Control.Monad.Reader
-
+import Control.Monad.Error
 import System.Mem.StableName
 
 import Safe
