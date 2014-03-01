@@ -51,6 +51,8 @@ import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.IntSet (IntSet)
@@ -62,6 +64,9 @@ import qualified Data.Traversable as Traversable
 import Data.List (intercalate)
 import Control.Monad.State
 import Control.Monad.Writer
+import Control.Monad.Error
+import Control.Monad.Reader
+
 import System.Mem.StableName
 
 import Safe
