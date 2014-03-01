@@ -82,35 +82,25 @@ reduceG :: Graph IntTreeF -> Int
 reduceG = fromEnum . runAGGraph max value depth 0
 
 reduce_expTree n = bgroup "expTree"
-    [bench (show n) $ nf reduce $ expTree n | n <- [4,6..n]]
+    [bench (show n) $ nf reduce $ expTree n | n <- [4..n]]
   -- Grows exponentially
 
 reduce_expGraph n = bgroup "expGraph"
-    [bench (show n) $ nf reduceG $ expGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf reduceG $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
 
 reduce_linearGraph n = bgroup "linearGraph"
-    [bench (show n) $ nf reduceG $ linearGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf reduceG $ linearGraph n | n <- [4..n]]
   -- Grows linearly
 
 reduce_linearGraphBig n = bgroup "linearGraphBig"
     [bench (show n) $ nf reduceG $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-confReduceOverhead = defaultConfig
-    { cfgReport      = Last (Just "reports/reduce_overhead.html")
-    -- , cfgSummaryFile = Last (Just "reports/reduce_overhead.csv")
-    }
-
-confReduceSharing = defaultConfig
-    { cfgReport      = Last (Just "reports/reduce_sharing.html")
-    -- , cfgSummaryFile = Last (Just "reports/reduce_sharing.csv")
-    }
-
-confReduceBig = defaultConfig
-    { cfgReport      = Last (Just "reports/reduce_big.html")
-    -- , cfgSummaryFile = Last (Just "reports/reduce_big.csv")
+conf name = defaultConfig
+    { cfgReport      = Last $ Just $ "reports/" ++ name ++ ".html"
+    , cfgSummaryFile = Last $ Just $ "reports/" ++ name ++ ".csv"
     }
 
 
@@ -124,75 +114,44 @@ confReduceBig = defaultConfig
 -- that simply forcing a bit result takes some time.
 
 repmin_expTree n = bgroup "expTree"
-    [bench (show n) $ nf repmin $ expTree n | n <- [4,6..n]]
+    [bench (show n) $ nf repmin $ expTree n | n <- [4..n]]
   -- Grows exponentially
 
 repmin_expGraph n = bgroup "expGraph"
-    [bench (show n) $ nf repminG $ expGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf repminG $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 5x for
   -- trees of size up to 2^16.
 
 repmin_expGraph' n = bgroup "expGraph'"
-    [bench (show n) $ nf repminG' $ expGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf repminG' $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 70x for
   -- trees of size up to 2^12.
 
 repmin_linearGraph n = bgroup "linearGraph"
-    [bench (show n) $ nf repminG $ linearGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf repminG $ linearGraph n | n <- [4..n]]
 
 repmin_linearGraph' n = bgroup "linearGraph'"
-    [bench (show n) $ nf repminG' $ linearGraph n | n <- [4,6..n]]
+    [bench (show n) $ nf repminG' $ linearGraph n | n <- [4..n]]
   -- Grows linearly
 
 repmin_linearGraphBig n = bgroup "linearGraphBig"
     [bench (show n) $ nf repminG' $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `repmin`
 
-confRepminOverhead = defaultConfig
-    { cfgReport      = Last (Just "reports/repmin_overhead.html")
-    -- , cfgSummaryFile = Last (Just "reports/repmin_overhead.csv")
-    }
-
-confRepminSharing = defaultConfig
-    { cfgReport      = Last (Just "reports/repmin_sharing.html")
-    -- , cfgSummaryFile = Last (Just "reports/repmin_sharing.csv")
-    }
-
-confRepminBig = defaultConfig
-    { cfgReport      = Last (Just "reports/repmin_big.html")
-    -- , cfgSummaryFile = Last (Just "reports/repmin_big.csv")
-    }
-
 main = do
-    defaultMainWith confReduceOverhead (return ())
-      [ reduce_expTree   16
-      , reduce_expGraph  16
-      ]
+    defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
+    defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
+    defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
+    defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
+    defaultMainWith (conf "reduce_sharing_linearGraph")  (return ()) [reduce_linearGraph    12]
+    defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
 
-    defaultMainWith confReduceSharing (return ())
-      [ reduce_expTree      10
-      , reduce_expGraph     10
-      , reduce_linearGraph  10
-      ]
-
-    defaultMainWith confReduceBig (return ())
-      [ reduce_linearGraphBig 200
-      ]
-
-    defaultMainWith confRepminOverhead (return ())
-      [ repmin_expTree   16
-      , repmin_expGraph  16
-      , repmin_expGraph' 12  -- OBS only up to 12
-      ]
-
-    defaultMainWith confRepminSharing (return ())
-      [ repmin_expTree      10
-      , repmin_expGraph     10
-      , repmin_linearGraph  10
-      , repmin_linearGraph' 10
-      ]
-
-    defaultMainWith confRepminBig (return ())
-      [ repmin_linearGraphBig 200
-      ]
+    defaultMainWith (conf "repmin_overhead_expTree")     (return ()) [repmin_expTree        16]
+    defaultMainWith (conf "repmin_overhead_expGraph")    (return ()) [repmin_expGraph       16]
+    defaultMainWith (conf "repmin_overhead_expGraph'")   (return ()) [repmin_expGraph'      12]  -- OBS only up to 12
+    defaultMainWith (conf "repmin_sharing_expTree")      (return ()) [repmin_expTree        12]
+    defaultMainWith (conf "repmin_sharing_expGraph")     (return ()) [repmin_expGraph       12]
+    defaultMainWith (conf "repmin_sharing_linearGraph")  (return ()) [repmin_linearGraph    12]
+    defaultMainWith (conf "repmin_sharing_linearGraph'") (return ()) [repmin_linearGraph    12]
+    defaultMainWith (conf "repmin_big_linearGraph")      (return ()) [repmin_linearGraphBig 200]
 
