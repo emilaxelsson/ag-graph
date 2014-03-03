@@ -67,7 +67,7 @@ value :: (Depth :< a) => Syn IntTreeF a Value
 value (Leaf l) = Value (l+d)
   where
     Depth d = above
-value (Node a b) = below a + below b
+value (Node a b) = max (below a) (below b)
 
 depth :: Inh IntTreeF a Depth
 depth (Node a b) = a |-> d & b |-> d
