@@ -21,7 +21,7 @@ import Prelude hiding (mapM)
 
 data Free f a = In (f (Free f a))
               | Ret a
-    
+
 deriving instance Show (f (Tree f)) => Show (Tree f)
 
 
@@ -101,7 +101,7 @@ explicit :: ((?above :: q, ?below :: a -> q) => b) -> q -> (a -> q) -> b
 explicit x ab be = x where ?above = ab; ?below = be
 
 
-                           
+
 type Rewrite f q g = forall a . (?below :: a -> q, ?above :: q) => f a -> Free g a
 
 
@@ -124,7 +124,7 @@ prodSyn sp sq t = (sp t, sq t)
 type Inh' f p q = forall i . (Ord i, ?below :: i -> p, ?above :: p)
                                 => f i -> Map i q
 type Inh f p q = (q :< p) => Inh' f p q
-          
+
 prodInh :: (p :< c, q :< c)
                => Inh f c p -> Inh f c q -> Inh f c (p,q)
 prodInh sp sq t = prodMap above above (sp t) (sq t)
@@ -163,7 +163,7 @@ prodMap p q mp mq = Map.map final $ Map.unionWith combine ps qs
 runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> d -> Tree f -> u
 runAG up down d (In t) = u where
         t' = fmap bel $ number t
-        bel (Numbered (i,s)) = 
+        bel (Numbered (i,s)) =
             let d' = Map.findWithDefault d (Numbered (i,undefined)) m
             in Numbered (i, (runAG up down d' s, d'))
         m = explicit down (u,d) unNumbered t'
@@ -177,14 +177,14 @@ runAG' syn inh df t = let u = runAG syn inh d t
 -- | This combinator runs a stateful term homomorphisms with a state
 -- space produced both on a bottom-up and a top-down state
 -- transformation.
-        
+
 runRewrite :: (Traversable f, Functor g) =>
-           Syn' f (u,d) u -> Inh' f (u,d) d -> 
+           Syn' f (u,d) u -> Inh' f (u,d) d ->
            Rewrite f (u,d) g ->
            d -> Tree f -> (u, Tree g)
 runRewrite up down trans d (In t) = (u,t'') where
         t' = fmap bel $ number t
-        bel (Numbered (i,s)) = 
+        bel (Numbered (i,s)) =
             let d' = Map.findWithDefault d (Numbered (i,undefined)) m
                 (u', s') = runRewrite up down trans d' s
             in Numbered (i, ((u', d'),s'))
@@ -193,7 +193,7 @@ runRewrite up down trans d (In t) = (u,t'') where
         t'' = join $ fmap (snd . unNumbered) $ explicit trans (u,d) (fst . unNumbered) t'
 
 runRewrite' :: (Traversable f, Functor g) =>
-           Syn' f (u,d) u -> Inh' f (u,d) d -> 
+           Syn' f (u,d) u -> Inh' f (u,d) d ->
            Rewrite f (u,d) g ->
            (u -> d) -> Tree f -> (u, Tree g)
 runRewrite' up down trans d' t = (u,t')

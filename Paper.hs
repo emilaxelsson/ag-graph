@@ -135,23 +135,23 @@ typeInf' :: Env -> Exp -> Maybe Type
 typeInf' env (LitB _)                    =  Just BoolType
 typeInf' env (LitI _)                    =  Just IntType
 typeInf' env (Eq a b)
-  |  let ta         =   typeInf' env a
-  ,  let tb         =   typeInf' env b
+  |  Just ta        <-  typeInf' env a
+  ,  Just tb        <-  typeInf' env b
   ,  ta == tb                            =  Just BoolType
 typeInf' env (Add a b)
   |  Just IntType   <-  typeInf' env a
   ,  Just IntType   <-  typeInf' env b   =  Just IntType
 typeInf' env (If c t f)
   |  Just BoolType  <-  typeInf' env c
-  ,  let tt         =   typeInf' env t
-  ,  let tf         =   typeInf' env f
-  ,  tt == tf                            =  tt
+  ,  Just tt        <-  typeInf' env t
+  ,  Just tf        <-  typeInf' env f
+  ,  tt == tf                            =  Just tt
 typeInf' env (Var v)                     =  lookEnv v env
 typeInf' env (Iter v n i b)
   |  Just IntType   <-  typeInf' env n
-  ,  let ti         =   typeInf' env i
-  ,  let tb         =   typeInf' (insertEnv v ti env) b
-  ,  ti == tb                            =  tb
+  ,  ti'@(Just ti)  <-  typeInf' env i
+  ,  Just tb        <-  typeInf' (insertEnv v ti' env) b
+  ,  ti == tb                            =  Just tb
 typeInf' _ _                             =  Nothing
 
 insertEnv :: Name -> Maybe Type -> Env -> Env
@@ -182,23 +182,23 @@ typeInfS :: (Env :< atts) => Syn ExpF atts (Maybe Type)
 typeInfS (LitB' _)                =  Just BoolType
 typeInfS (LitI' _)                =  Just IntType
 typeInfS (Eq' a b)
-  |  let ta         =   typeOf a
-  ,  let tb         =   typeOf b
+  |  Just ta        <-  typeOf a
+  ,  Just tb        <-  typeOf b
   ,  ta == tb                     =  Just BoolType
 typeInfS (Add' a b)
   |  Just  IntType  <-  typeOf a
   ,  Just  IntType  <-  typeOf b  =  Just IntType
 typeInfS (If' c t f)
   |  Just BoolType  <-  typeOf c
-  ,  let tt         =   typeOf t
-  ,  let tf         =   typeOf f
-  ,  tt == tf                     =  tt
+  ,  Just tt        <-  typeOf t
+  ,  Just tf        <-  typeOf f
+  ,  tt == tf                     =  Just tt
 typeInfS (Var' v)                 =  lookEnv v above
 typeInfS (Iter' v n i b)          
   |  Just IntType   <-  typeOf n  
-  ,  let ti         =   typeOf i  
-  ,  let tb         =   typeOf b  
-  ,  ti == tb                     =  tb
+  ,  Just ti        <-  typeOf i
+  ,  Just tb        <-  typeOf b
+  ,  ti == tb                     =  Just tb
 typeInfS _                        =  Nothing
 
 typeInfI :: (Maybe Type :< atts) => Inh ExpF atts Env
