@@ -4,8 +4,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+
+
 import Data.Monoid
 
 import Criterion.Main
@@ -46,9 +46,17 @@ expTree n = In $ Node (expTree (n-1)) (expTree (n-1))
 expGraph :: Int -> Graph IntTreeF
 expGraph = termTree . expTree
 
+expGraphF :: Int -> GraphFree IntTreeF
+expGraphF = termTreeFree . expTree
+
 linearGraph :: Int -> Graph IntTreeF
 linearGraph n = mkGraph 0 $
     [(k, Node (k+1) (k+1)) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
+
+linearGraphF :: Int -> GraphFree IntTreeF
+linearGraphF n = mkGraph 0 $
+    [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
+
 
 
 
@@ -81,6 +89,10 @@ reduce = fromEnum . runAG value depth 0
 reduceG :: Graph IntTreeF -> Int
 reduceG = fromEnum . runAGGraph max value depth 0
 
+reduceGF :: GraphFree IntTreeF -> Int
+reduceGF = fromEnum . runAGGraphFree max value depth 0
+
+
 reduce_expTree n = bgroup "expTree"
     [bench (show n) $ nf reduce $ expTree n | n <- [4..n]]
   -- Grows exponentially
@@ -90,13 +102,26 @@ reduce_expGraph n = bgroup "expGraph"
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
 
+reduce_expGraphF n = bgroup "expGraphF"
+    [bench (show n) $ nf reduceGF $ expGraphF n | n <- [4..n]]
+
 reduce_linearGraph n = bgroup "linearGraph"
     [bench (show n) $ nf reduceG $ linearGraph n | n <- [4..n]]
   -- Grows linearly
 
+reduce_linearGraphF n = bgroup "linearGraphF"
+    [bench (show n) $ nf reduceGF $ linearGraphF n | n <- [4..n]]
+  -- Grows linearly
+
+
 reduce_linearGraphBig n = bgroup "linearGraphBig"
     [bench (show n) $ nf reduceG $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
+
+reduce_linearGraphBigF n = bgroup "linearGraphBigF"
+    [bench (show n) $ nf reduceGF $ linearGraphF n | n <- [10,20..n]]
+  -- Grows linearly even for sizes that are out of reach for `reduce`
+
 
 conf name = defaultConfig
     { cfgReport      = Last $ Just $ "reports/" ++ name ++ ".html"
@@ -141,10 +166,14 @@ repmin_linearGraphBig n = bgroup "linearGraphBig"
 main = do
     defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
     defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
+    defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
     defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
     defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
+    defaultMainWith (conf "reduce_sharing_expGraphF")    (return ()) [reduce_expGraphF      12]
     defaultMainWith (conf "reduce_sharing_linearGraph")  (return ()) [reduce_linearGraph    12]
+    defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
+    defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
 
     defaultMainWith (conf "repmin_overhead_expTree")     (return ()) [repmin_expTree        16]
     defaultMainWith (conf "repmin_overhead_expGraph")    (return ()) [repmin_expGraph       16]
