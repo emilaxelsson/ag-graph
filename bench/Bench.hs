@@ -26,13 +26,35 @@ class Functor f => NFDataF f
   where
     rnfF :: NFData a => f a -> ()
 
-instance NFDataF f => NFData (Tree f)
+instance NFData Zero where
+    rnf _ = ()
+
+instance (NFData a, NFDataF f) => NFData (Free f a)
   where
     rnf (In f) = rnfF f
+    rnf (Ret x) = rnf x `seq` ()
+
+
+instance NFDataF f => NFDataF (Free f)
+  where
+    rnfF (In f) = rnfF f
+    rnfF (Ret x) = rnf x `seq` ()
+
+instance NFDataF f => NFData (Free' f)
+  where
+    rnf (FTree f) = rnfF f
+    rnf (FNode x) = rnf x `seq` ()
+
+
 
 instance NFDataF f => NFData (Graph f)
   where
     rnf (Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
+
+
+instance NFDataF f => NFData (GraphFree' f)
+  where
+    rnf (GF r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
 instance NFDataF IntTreeF
   where
@@ -49,6 +71,10 @@ expGraph = termTree . expTree
 expGraphF :: Int -> GraphFree IntTreeF
 expGraphF = termTreeFree . expTree
 
+expGraphF' :: Int -> GraphFree' IntTreeF
+expGraphF' = termTreeFree' . expTree
+
+
 linearGraph :: Int -> Graph IntTreeF
 linearGraph n = mkGraph 0 $
     [(k, Node (k+1) (k+1)) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
@@ -56,6 +82,10 @@ linearGraph n = mkGraph 0 $
 linearGraphF :: Int -> GraphFree IntTreeF
 linearGraphF n = mkGraph 0 $
     [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
+
+linearGraphF' :: Int -> GraphFree' IntTreeF
+linearGraphF' n = mkGraph' 0 $
+    [(k, Node (FNode (k+1)) (FNode (k+1))) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
 
 
@@ -92,34 +122,46 @@ reduceG = fromEnum . runAGGraph max value depth 0
 reduceGF :: GraphFree IntTreeF -> Int
 reduceGF = fromEnum . runAGGraphFree max value depth 0
 
+reduceGF' :: GraphFree' IntTreeF -> Int
+reduceGF' = fromEnum . runAGGraphFree' max value depth 0
+
+bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
 reduce_expTree n = bgroup "expTree"
-    [bench (show n) $ nf reduce $ expTree n | n <- [4..n]]
+    [bench' (show n) reduce $ expTree n | n <- [4..n]]
   -- Grows exponentially
 
 reduce_expGraph n = bgroup "expGraph"
-    [bench (show n) $ nf reduceG $ expGraph n | n <- [4..n]]
+    [bench' (show n) reduceG $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
 
 reduce_expGraphF n = bgroup "expGraphF"
-    [bench (show n) $ nf reduceGF $ expGraphF n | n <- [4..n]]
+    [bench' (show n) reduceGF $ expGraphF n | n <- [4..n]]
+
+reduce_expGraphF' n = bgroup "expGraphF'"
+    [bench' (show n) reduceGF' $ expGraphF' n | n <- [4..n]]
+
 
 reduce_linearGraph n = bgroup "linearGraph"
-    [bench (show n) $ nf reduceG $ linearGraph n | n <- [4..n]]
+    [bench' (show n) reduceG $ linearGraph n | n <- [4..n]]
   -- Grows linearly
 
 reduce_linearGraphF n = bgroup "linearGraphF"
-    [bench (show n) $ nf reduceGF $ linearGraphF n | n <- [4..n]]
+    [bench' (show n) reduceGF $ linearGraphF n | n <- [4..n]]
   -- Grows linearly
 
 
 reduce_linearGraphBig n = bgroup "linearGraphBig"
-    [bench (show n) $ nf reduceG $ linearGraph n | n <- [10,20..n]]
+    [bench' (show n) reduceG $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 reduce_linearGraphBigF n = bgroup "linearGraphBigF"
-    [bench (show n) $ nf reduceGF $ linearGraphF n | n <- [10,20..n]]
+    [bench' (show n) reduceGF $ linearGraphF n | n <- [10,20..n]]
+  -- Grows linearly even for sizes that are out of reach for `reduce`
+
+reduce_linearGraphBigF' n = bgroup "linearGraphBigF'"
+    [bench' (show n) reduceGF' $ linearGraphF' n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
@@ -139,34 +181,35 @@ conf name = defaultConfig
 -- that simply forcing a bit result takes some time.
 
 repmin_expTree n = bgroup "expTree"
-    [bench (show n) $ nf repmin $ expTree n | n <- [4..n]]
+    [bench' (show n) repmin $ expTree n | n <- [4..n]]
   -- Grows exponentially
 
 repmin_expGraph n = bgroup "expGraph"
-    [bench (show n) $ nf repminG $ expGraph n | n <- [4..n]]
+    [bench' (show n) repminG $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 5x for
   -- trees of size up to 2^16.
 
 repmin_expGraph' n = bgroup "expGraph'"
-    [bench (show n) $ nf repminG' $ expGraph n | n <- [4..n]]
+    [bench' (show n) repminG' $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 70x for
   -- trees of size up to 2^12.
 
 repmin_linearGraph n = bgroup "linearGraph"
-    [bench (show n) $ nf repminG $ linearGraph n | n <- [4..n]]
+    [bench' (show n) repminG $ linearGraph n | n <- [4..n]]
 
 repmin_linearGraph' n = bgroup "linearGraph'"
-    [bench (show n) $ nf repminG' $ linearGraph n | n <- [4..n]]
+    [bench' (show n) repminG' $ linearGraph n | n <- [4..n]]
   -- Grows linearly
 
 repmin_linearGraphBig n = bgroup "linearGraphBig"
-    [bench (show n) $ nf repminG' $ linearGraph n | n <- [10,20..n]]
+    [bench' (show n) repminG' $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `repmin`
 
 main = do
     defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
     defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
     defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
+    defaultMainWith (conf "reduce_overhead_expGraphF'")   (return ()) [reduce_expGraphF'      16]
     defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
     defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
     defaultMainWith (conf "reduce_sharing_expGraphF")    (return ()) [reduce_expGraphF      12]
@@ -174,6 +217,7 @@ main = do
     defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
     defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
+    defaultMainWith (conf "reduce_big_linearGraphF'")     (return ()) [reduce_linearGraphBigF' 200]
 
     defaultMainWith (conf "repmin_overhead_expTree")     (return ()) [repmin_expTree        16]
     defaultMainWith (conf "repmin_overhead_expGraph")    (return ()) [repmin_expGraph       16]
