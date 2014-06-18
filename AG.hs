@@ -43,6 +43,12 @@ deriving instance Show Zero
 
 type Tree g = Free g Zero
 
+freeTree :: Functor f => Tree f -> Free f a
+freeTree (In f) = In (fmap freeTree f)
+freeTree (Ret x) = Ret (zero x)
+
+zero :: Zero -> a
+zero _ = error "zero"
 
 -- | This type is used for numbering components of a functorial value.
 newtype Numbered a = Numbered (Int, a)
@@ -109,6 +115,7 @@ type Rewrite f q g = forall a . (?below :: a -> q, ?above :: q) => f a -> Free g
 
 type Syn' f p q = forall a . (?below :: a -> p, ?above :: p) => f a -> q
 type Syn  f p q = (q :< p) => Syn' f p q
+type SynExpl f p q = forall a . p -> (a -> p) -> f a -> q
 
 prodSyn :: (p :< c, q :< c)
              => Syn f c p -> Syn f c q -> Syn f c (p,q)
@@ -124,6 +131,8 @@ prodSyn sp sq t = (sp t, sq t)
 type Inh' f p q = forall i . (Ord i, ?below :: i -> p, ?above :: p)
                                 => f i -> Map i q
 type Inh f p q = (q :< p) => Inh' f p q
+
+type InhExpl f p q = forall i . Ord i => p -> (i -> p) -> f i -> Map i q
 
 prodInh :: (p :< c, q :< c)
                => Inh f c p -> Inh f c q -> Inh f c (p,q)

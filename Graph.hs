@@ -24,8 +24,10 @@
 module Graph
     ( module AG
     , Graph (..)
+    , GraphFree
     , Node
     , termTree
+    , termTreeFree
     , unravelGraph
     , appGraphCxt
     , reifyGraph
@@ -45,6 +47,7 @@ module Graph
     , runRewriteGraph'
     , runAGGraph
     , runAGGraph'
+    , runAGGraphFree
     ) where
 
 import Data.Foldable (Foldable)
@@ -57,7 +60,7 @@ import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
-import Data.Map (Map)
+
 import qualified Data.Map as Map
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
@@ -82,6 +85,8 @@ type Node = Int
 data Graph f = Graph { _root :: Node
                      , _eqs :: IntMap (f Node)
                      , _next :: Node }
+
+type GraphFree f = Graph (Free f)
 
 data GraphCxt f a = GraphCxt { _graph :: Graph f
                              , _holes :: IntMap a }
@@ -453,3 +458,46 @@ runAGGraph' :: Traversable f => (d -> d -> d) -> Syn' f (u,d) u -> Inh' f (u,d) 
 runAGGraph' res syn inh df g = let u = runAGGraph res syn inh d g
                                    d = df u
                                in u
+
+runAGGraphFree :: forall f d u .Traversable f
+    => (d -> d -> d)         -- ^ Resolution of top-down state
+    -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
+    -> Inh' f (u,d) d  -- ^ Top-down state propagation
+    -> d                     -- ^ Initial top-down state
+    -> GraphFree f
+    -> u
+runAGGraphFree res syn inh d g = umap IntMap.! _root g
+    where syn' :: SynExpl f (u,d) u
+          syn' = explicit syn
+          inh' :: InhExpl f (u,d) d
+          inh' = explicit inh
+          run = free res  syn' inh'
+          dmap = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2) 
+                 (IntMap.singleton (_root g) d) result
+          umap = IntMap.map fst result
+          result = IntMap.mapWithKey (\ n t -> run (dmap IntMap.! n) umap t) (_eqs g)
+
+
+
+
+free :: forall f u d . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
+     -> d -> IntMap u -> Free f Node -> (u, IntMap d)
+free res syn inh d umap s = run d s where
+    run :: d -> Free f Node -> (u, IntMap d)
+    run d (Ret x) = (umap IntMap.! x, IntMap.singleton x d)
+    run d (In t)  = (u, dmap)
+        where t' = number t
+              u = syn (u,d) unNumbered result
+              m = inh (u,d) unNumbered result
+              (result, dmap) = runState (Traversable.mapM run' t') IntMap.empty
+              run' :: Numbered (Free f Node) -> State (IntMap d) (Numbered ((u,d)))
+              run' (Numbered (i,s)) = do
+                  let d' = Map.findWithDefault d (Numbered (i,undefined)) m
+                      (u',dmap') = run d' s
+                  modify (IntMap.unionWith res dmap')
+                  return (Numbered (i, (u',d')))
+
+
+
+termTreeFree :: Functor f => Tree f -> GraphFree f
+termTreeFree t = Graph 0 (IntMap.singleton 0 (freeTree t)) 1
