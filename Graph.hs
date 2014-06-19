@@ -7,6 +7,7 @@
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RecursiveDo #-}
 
 --------------------------------------------------------------------------------
 -- |
@@ -25,12 +26,9 @@ module Graph
     ( module AG
     , Graph (..)
     , GraphFree
-    , GraphFree' (..)
-    , Free' (..)
     , Node
     , termTree
     , termTreeFree
-    , termTreeFree'
     , unravelGraph
     , appGraphCxt
     , reifyGraph
@@ -40,7 +38,6 @@ module Graph
     , lookupNode
 
     , mkGraph
-    , mkGraph'
     , liftGraph
     , image
     , reachable
@@ -52,7 +49,7 @@ module Graph
     , runAGGraph
     , runAGGraph'
     , runAGGraphFree
-    , runAGGraphFree'
+    , runAGGraphFreeST
     ) where
 
 import Data.Foldable (Foldable)
@@ -76,6 +73,9 @@ import Control.Monad.Reader
 import Control.Monad.Error
 import System.Mem.StableName
 
+import Data.STRef
+import Control.Monad.ST
+
 import Safe
 
 import AG
@@ -92,11 +92,6 @@ data Graph f = Graph { _root :: Node
                      , _next :: Node }
 
 type GraphFree f = Graph (Free f)
-data GraphFree' f = GF { gf_root :: Node
-                       , gf_eqs :: IntMap (f (Free' f))
-                       , gf_next :: Node }
-
-data Free' f = FNode !Node | FTree !(f (Free' f))
 
 data GraphCxt f a = GraphCxt { _graph :: Graph f
                              , _holes :: IntMap a }
@@ -507,61 +502,47 @@ free res syn inh d umap s = run d s where
                   modify (IntMap.unionWith res dmap')
                   return (Numbered (i, (u',d')))
 
-
-
-termTreeFree :: Functor f => Tree f -> GraphFree f
-termTreeFree t = Graph 0 (IntMap.singleton 0 (freeTree t)) 1
-
-
-runAGGraphFree' :: forall f d u .Traversable f
+runAGGraphFreeST :: forall f d u .Traversable f
     => (d -> d -> d)         -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
     -> d                     -- ^ Initial top-down state
-    -> GraphFree' f
+    -> GraphFree f
     -> u
-runAGGraphFree' res syn inh d g = umap IntMap.! gf_root g
+runAGGraphFreeST res syn inh d g = runST runM 
     where syn' :: SynExpl f (u,d) u
           syn' = explicit syn
           inh' :: InhExpl f (u,d) d
           inh' = explicit inh
-          run = free' res  syn' inh'
-          dmap = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2) 
-                 (IntMap.singleton (gf_root g) d) result
-          umap = IntMap.map fst result
-          result = IntMap.mapWithKey (\ n t -> run (dmap IntMap.! n) umap t) (gf_eqs g)
+          runM :: ST s u
+          runM = mdo ref <- newSTRef (IntMap.singleton (_root g) d)
+                     let iter n t = freeST res  syn' inh' ref (dmap IntMap.! n) umap t   
+                     umap <- IntMap.traverseWithKey iter (_eqs g)
+                     dmap <- readSTRef ref
+                     return (umap IntMap.! _root g)
 
 
 
 
-free' :: forall f u d . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
-     -> d -> IntMap u -> f (Free' f) -> (u, IntMap d)
-free' res syn inh d umap s = runTop d s where
-    runTop :: d -> f (Free' f) -> (u, IntMap d)
-    runTop d t  = (u, dmap)
-        where t' = number t
-              u = syn (u,d) unNumbered result
-              m = inh (u,d) unNumbered result
-              (result, dmap) = runState (Traversable.mapM run' t') IntMap.empty
-              run' :: Numbered (Free' f) -> State (IntMap d) (Numbered ((u,d)))
-              run' (Numbered (i,s)) = do
-                  let d' = Map.findWithDefault d (Numbered (i,undefined)) m
-                      (u',dmap') = run d' s
-                  modify (IntMap.unionWith res dmap')
-                  return (Numbered (i, (u',d')))
-    run :: d -> Free' f -> (u, IntMap d)
-    run d (FNode x) = (umap IntMap.! x, IntMap.singleton x d)
-    run d (FTree t)  = runTop d t
+
+freeST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
+       -> STRef s (IntMap d)
+     -> d -> IntMap u -> Free f Node -> ST s u
+freeST res syn inh ref d umap s = run d s where
+    run :: d -> Free f Node -> ST s u
+    run d (Ret x) = do modifySTRef ref (IntMap.insertWith res x d)
+                       return (umap IntMap.! x)
+    run d (In t)  = mdo let t' = number t
+                        let u = syn (u,d) unNumbered result
+                        let m = inh (u,d) unNumbered result
+                        let run' :: Numbered (Free f Node) -> ST s (Numbered (u,d))
+                            run' (Numbered (i,s)) = do
+                                            let d' = Map.findWithDefault d (Numbered (i,undefined)) m
+                                            u' <- run d' s
+                                            return (Numbered (i, (u',d')))
+                        result <- Traversable.mapM run' t'
+                        return u
 
 
-
-termTreeFree' :: Functor f => Tree f -> GraphFree' f
-termTreeFree' t = GF 0 (IntMap.singleton 0 (freeTree' t)) 1
-
-
-freeTree' :: Functor f => Tree f -> f (Free' f)
-freeTree' (In f) = fmap (FTree . freeTree') f
-freeTree' (Ret _) = error "freeTree'"
-
-mkGraph' :: Node -> [(Node, f (Free' f))] -> GraphFree' f
-mkGraph' r es = GF r (IntMap.fromList es) (maximum (map fst es) + 1)
+termTreeFree :: Functor f => Tree f -> GraphFree f
+termTreeFree t = Graph 0 (IntMap.singleton 0 (freeTree t)) 1

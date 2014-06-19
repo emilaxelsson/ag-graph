@@ -40,21 +40,11 @@ instance NFDataF f => NFDataF (Free f)
     rnfF (In f) = rnfF f
     rnfF (Ret x) = rnf x `seq` ()
 
-instance NFDataF f => NFData (Free' f)
-  where
-    rnf (FTree f) = rnfF f
-    rnf (FNode x) = rnf x `seq` ()
-
-
 
 instance NFDataF f => NFData (Graph f)
   where
     rnf (Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
-
-instance NFDataF f => NFData (GraphFree' f)
-  where
-    rnf (GF r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
 instance NFDataF IntTreeF
   where
@@ -71,9 +61,6 @@ expGraph = termTree . expTree
 expGraphF :: Int -> GraphFree IntTreeF
 expGraphF = termTreeFree . expTree
 
-expGraphF' :: Int -> GraphFree' IntTreeF
-expGraphF' = termTreeFree' . expTree
-
 
 linearGraph :: Int -> Graph IntTreeF
 linearGraph n = mkGraph 0 $
@@ -82,10 +69,6 @@ linearGraph n = mkGraph 0 $
 linearGraphF :: Int -> GraphFree IntTreeF
 linearGraphF n = mkGraph 0 $
     [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
-
-linearGraphF' :: Int -> GraphFree' IntTreeF
-linearGraphF' n = mkGraph' 0 $
-    [(k, Node (FNode (k+1)) (FNode (k+1))) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
 
 
@@ -122,8 +105,8 @@ reduceG = fromEnum . runAGGraph max value depth 0
 reduceGF :: GraphFree IntTreeF -> Int
 reduceGF = fromEnum . runAGGraphFree max value depth 0
 
-reduceGF' :: GraphFree' IntTreeF -> Int
-reduceGF' = fromEnum . runAGGraphFree' max value depth 0
+reduceGFST :: GraphFree IntTreeF -> Int
+reduceGFST = fromEnum . runAGGraphFreeST max value depth 0
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
@@ -139,8 +122,8 @@ reduce_expGraph n = bgroup "expGraph"
 reduce_expGraphF n = bgroup "expGraphF"
     [bench' (show n) reduceGF $ expGraphF n | n <- [4..n]]
 
-reduce_expGraphF' n = bgroup "expGraphF'"
-    [bench' (show n) reduceGF' $ expGraphF' n | n <- [4..n]]
+reduce_expGraphFST n = bgroup "expGraphFST"
+    [bench' (show n) reduceGFST $ expGraphF n | n <- [4..n]]
 
 
 reduce_linearGraph n = bgroup "linearGraph"
@@ -160,8 +143,8 @@ reduce_linearGraphBigF n = bgroup "linearGraphBigF"
     [bench' (show n) reduceGF $ linearGraphF n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-reduce_linearGraphBigF' n = bgroup "linearGraphBigF'"
-    [bench' (show n) reduceGF' $ linearGraphF' n | n <- [10,20..n]]
+reduce_linearGraphBigFST n = bgroup "linearGraphBigFST"
+    [bench' (show n) reduceGFST $ linearGraphF n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
@@ -209,7 +192,7 @@ main = do
     defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
     defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
     defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
-    defaultMainWith (conf "reduce_overhead_expGraphF'")   (return ()) [reduce_expGraphF'      16]
+    defaultMainWith (conf "reduce_overhead_expGraphFST")   (return ()) [reduce_expGraphFST      16]
     defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
     defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
     defaultMainWith (conf "reduce_sharing_expGraphF")    (return ()) [reduce_expGraphF      12]
@@ -217,7 +200,7 @@ main = do
     defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
     defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
-    defaultMainWith (conf "reduce_big_linearGraphF'")     (return ()) [reduce_linearGraphBigF' 200]
+    defaultMainWith (conf "reduce_big_linearGraphFST")     (return ()) [reduce_linearGraphBigFST 200]
 
     defaultMainWith (conf "repmin_overhead_expTree")     (return ()) [repmin_expTree        16]
     defaultMainWith (conf "repmin_overhead_expGraph")    (return ()) [repmin_expGraph       16]
