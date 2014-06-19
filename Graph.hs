@@ -73,8 +73,11 @@ import Control.Monad.Reader
 import Control.Monad.Error
 import System.Mem.StableName
 
-import Data.STRef
+
 import Control.Monad.ST
+import qualified Data.Vector as Vec
+import qualified Data.Vector.Generic.Mutable as MVec
+import Data.Maybe
 
 import Safe
 
@@ -515,23 +518,34 @@ runAGGraphFreeST res syn inh d g = runST runM
           inh' :: InhExpl f (u,d) d
           inh' = explicit inh
           runM :: ST s u
-          runM = mdo ref <- newSTRef (IntMap.singleton (_root g) d)
-                     let iter n t = freeST res  syn' inh' ref (dmap IntMap.! n) umap t   
-                     umap <- IntMap.traverseWithKey iter (_eqs g)
-                     dmap <- readSTRef ref
-                     return (umap IntMap.! _root g)
+          runM = mdo dmap <- MVec.new (_next g)
+                     MVec.set dmap Nothing
+                     MVec.write dmap (_root g) (Just d)
+                     umap <- MVec.new (_next g)
+                     let iter (n, t) = do 
+                           u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin t   
+                           MVec.write umap n u
+                           return ()
+                     mapM_ iter (IntMap.toList $ _eqs g)
+                     dmapFin <- Vec.unsafeFreeze dmap
+                     umapFin <- Vec.unsafeFreeze umap
+                     return (umapFin Vec.! _root g)
 
 
 
 
 
 freeST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
-       -> STRef s (IntMap d)
-     -> d -> IntMap u -> Free f Node -> ST s u
+       -> Vec.MVector s (Maybe d)
+     -> d -> Vec.Vector u -> Free f Node -> ST s u
 freeST res syn inh ref d umap s = run d s where
     run :: d -> Free f Node -> ST s u
-    run d (Ret x) = do modifySTRef ref (IntMap.insertWith res x d)
-                       return (umap IntMap.! x)
+    run d (Ret x) = do old <- MVec.unsafeRead ref x
+                       let new = case old of
+                                   Just o -> res o d
+                                   _      -> d
+                       MVec.unsafeWrite ref x (Just new)
+                       return (umap Vec.! x)
     run d (In t)  = mdo let t' = number t
                         let u = syn (u,d) unNumbered result
                         let m = inh (u,d) unNumbered result
