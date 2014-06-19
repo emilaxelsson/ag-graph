@@ -522,11 +522,11 @@ runAGGraphFreeST res syn inh d g = runST runM
           runM :: ST s u
           runM = mdo dmap <- MVec.new (_next g)
                      MVec.set dmap Nothing
-                     MVec.write dmap (_root g) (Just d)
+                     MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
                      let iter (n, t) = do 
                            u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin t   
-                           MVec.write umap n u
+                           MVec.unsafeWrite umap n u
                            return ()
                      mapM_ iter (IntMap.toList $ _eqs g)
                      dmapFin <- Vec.unsafeFreeze dmap
@@ -579,11 +579,11 @@ runAGGraphST res syn inh d g = runST runM
           runM :: ST s u
           runM = mdo dmap <- MVec.new (_next g)
                      MVec.set dmap Nothing
-                     MVec.write dmap (_root g) (Just d)
+                     MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
                      let iter (n, t) = do 
                            u <- runDownST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin t   
-                           MVec.write umap n u
+                           MVec.unsafeWrite umap n u
                            return ()
                      mapM_ iter (IntMap.toList $ _eqs g)
                      dmapFin <- Vec.unsafeFreeze dmap

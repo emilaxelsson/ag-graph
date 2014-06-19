@@ -146,6 +146,11 @@ reduce_linearGraphBig n = bgroup "linearGraphBig"
     [bench' (show n) reduceG $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
+reduce_linearGraphBigST n = bgroup "linearGraphBigST"
+    [bench' (show n) reduceGST $ linearGraph n | n <- [10,20..n]]
+  -- Grows linearly even for sizes that are out of reach for `reduce`
+
+
 reduce_linearGraphBigF n = bgroup "linearGraphBigF"
     [bench' (show n) reduceGF $ linearGraphF n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
@@ -208,7 +213,7 @@ main = do
     defaultMainWith (conf "reduce_sharing_linearGraph")  (return ()) [reduce_linearGraph    12]
     defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
-    defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBig 200]
+    defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBigST 200]
     defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
     defaultMainWith (conf "reduce_big_linearGraphFST")     (return ()) [reduce_linearGraphBigFST 200]
 
