@@ -102,6 +102,10 @@ reduce = fromEnum . runAG value depth 0
 reduceG :: Graph IntTreeF -> Int
 reduceG = fromEnum . runAGGraph max value depth 0
 
+reduceGST :: Graph IntTreeF -> Int
+reduceGST = fromEnum . runAGGraphST max value depth 0
+
+
 reduceGF :: GraphFree IntTreeF -> Int
 reduceGF = fromEnum . runAGGraphFree max value depth 0
 
@@ -118,6 +122,9 @@ reduce_expGraph n = bgroup "expGraph"
     [bench' (show n) reduceG $ expGraph n | n <- [4..n]]
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
+
+reduce_expGraphST n = bgroup "expGraphST"
+    [bench' (show n) reduceGST $ expGraph n | n <- [4..n]]
 
 reduce_expGraphF n = bgroup "expGraphF"
     [bench' (show n) reduceGF $ expGraphF n | n <- [4..n]]
@@ -191,14 +198,17 @@ repmin_linearGraphBig n = bgroup "linearGraphBig"
 main = do
     defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
     defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
+    defaultMainWith (conf "reduce_overhead_expGraphST")    (return ()) [reduce_expGraphST       16]
     defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
     defaultMainWith (conf "reduce_overhead_expGraphFST")   (return ()) [reduce_expGraphFST      16]
     defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
     defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
+    defaultMainWith (conf "reduce_sharing_expGraphST")     (return ()) [reduce_expGraphST       12]
     defaultMainWith (conf "reduce_sharing_expGraphF")    (return ()) [reduce_expGraphF      12]
     defaultMainWith (conf "reduce_sharing_linearGraph")  (return ()) [reduce_linearGraph    12]
     defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
+    defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBig 200]
     defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
     defaultMainWith (conf "reduce_big_linearGraphFST")     (return ()) [reduce_linearGraphBigFST 200]
 
