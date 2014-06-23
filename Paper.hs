@@ -194,8 +194,8 @@ typeInfS (If' c t f)
   ,  Just tf        <-  typeOf f
   ,  tt == tf                     =  Just tt
 typeInfS (Var' v)                 =  lookEnv v above
-typeInfS (Iter' v n i b)          
-  |  Just IntType   <-  typeOf n  
+typeInfS (Iter' v n i b)
+  |  Just IntType   <-  typeOf n
   ,  Just ti        <-  typeOf i
   ,  Just tb        <-  typeOf b
   ,  ti == tb                     =  Just tb
@@ -284,11 +284,11 @@ rep' (Node a b)  =  In (Node (Ret a) (Ret b))
 
 repmin' :: Tree IntTreeF -> Tree IntTreeF
 repmin' = snd . runRewrite' minS minI rep' init
-  where init (MinS i) = MinI i 
+  where init (MinS i) = MinI i
 
 repminG' :: Graph IntTreeF -> Graph IntTreeF
 repminG' = snd . runRewriteGraph' const minS minI rep' init
-  where init (MinS i) = MinI i 
+  where init (MinS i) = MinI i
 
 repminTestG1  = repminG i1
 repminTestG1' = repminG' i1
