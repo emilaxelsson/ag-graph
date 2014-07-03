@@ -2,6 +2,22 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 
+-- | This module implements a renamer for graphs such that each binder introduces a unique variable
+-- name.
+--
+-- The algorithm works as follows:
+--
+-- * By default, the new graph is created by copying nodes from the original graph and renaming
+--   binders (and corresponding variables) to be unique.
+--
+-- * An exception is made if the node has already been copied under a compatible set of renamings.
+--   In that case, a reference to the previous copy is returned.
+--
+-- Without the exception, we would loose all sharing in the original graph (the new graph would
+-- always be a tree). The exception makes sure that we retain sharing where possible. However, it is
+-- generally not possible to retain all sharing, since shared sub-trees may appear in contexts with
+-- incompatible renamings (see e.g. example @g3@ in Paper.hs).
+
 module Rename where
 
 
