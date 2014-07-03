@@ -7,11 +7,12 @@
 --
 -- The algorithm works as follows:
 --
--- * By default, the new graph is created by copying nodes from the original graph and renaming
---   binders (and corresponding variables) to be unique.
+-- * By default, the new graph is created by traversing the expression from the root and down,
+--   copying nodes from the original graph and renaming binders (and corresponding variables) to be
+--   unique.
 --
--- * An exception is made if the node has already been copied under a compatible set of renamings.
---   In that case, a reference to the previous copy is returned.
+-- * An exception is made when visiting a node that has already been copied under a compatible set
+--   of renamings. In that case, a reference to the previous copy is used.
 --
 -- Without the exception, we would loose all sharing in the original graph (the new graph would
 -- always be a tree). The exception makes sure that we retain sharing where possible. However, it is
