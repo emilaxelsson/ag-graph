@@ -11,8 +11,6 @@ module Paper where
 
 
 import Data.Foldable (Foldable)
-
-
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
