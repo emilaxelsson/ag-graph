@@ -14,6 +14,7 @@ import Control.DeepSeq
 
 import AG
 import Graph
+import qualified GraphFree as Free
 import Paper
 
 
@@ -58,15 +59,15 @@ expTree n = In $ Node (expTree (n-1)) (expTree (n-1))
 expGraph :: Int -> Graph IntTreeF
 expGraph = termTree . expTree
 
-expGraphF :: Int -> GraphFree IntTreeF
-expGraphF = termTreeFree . expTree
+expGraphF :: Int -> Free.Graph IntTreeF
+expGraphF = Free.termTree . expTree
 
 
 linearGraph :: Int -> Graph IntTreeF
 linearGraph n = mkGraph 0 $
     [(k, Node (k+1) (k+1)) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
-linearGraphF :: Int -> GraphFree IntTreeF
+linearGraphF :: Int -> Free.Graph IntTreeF
 linearGraphF n = mkGraph 0 $
     [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
 
@@ -106,11 +107,11 @@ reduceGST :: Graph IntTreeF -> Int
 reduceGST = fromEnum . runAGGraphST max value depth 0
 
 
-reduceGF :: GraphFree IntTreeF -> Int
-reduceGF = fromEnum . runAGGraphFree max value depth 0
+reduceGF :: Free.Graph IntTreeF -> Int
+reduceGF = fromEnum . Free.runAGGraph max value depth 0
 
-reduceGFST :: GraphFree IntTreeF -> Int
-reduceGFST = fromEnum . runAGGraphFreeST max value depth 0
+reduceGFST :: Free.Graph IntTreeF -> Int
+reduceGFST = fromEnum . Free.runAGGraphST max value depth 0
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
