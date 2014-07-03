@@ -97,7 +97,7 @@ decorVars g = g { _eqs = execState (decorVarsM g (_root g)) IntMap.empty }
 
 renameM :: Graph (ExpF :&: Set Name) -> Aliases -> Node -> WriterT Wr (State St) Node
 renameM g aliases n
-    | Nothing <- IntMap.lookup n (_eqs g) = error "TODO 1"
+    | Nothing <- IntMap.lookup n (_eqs g) = error $ "rename: node " ++ show n ++ " not in the graph"
 renameM g aliases n = do
     let f :&: vs = graphEdges g IntMap.! n
         aliases' = [(v,v') | (v,v') <- aliases, v `Set.member` vs]
