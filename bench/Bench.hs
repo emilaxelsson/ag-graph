@@ -15,6 +15,7 @@ import Control.DeepSeq
 import AG
 import Graph
 import qualified GraphFree as Free
+import qualified GraphFreeNonEmpty as FNE
 import Paper
 
 
@@ -46,6 +47,10 @@ instance NFDataF f => NFData (Graph f)
   where
     rnf (Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
+instance NFDataF f => NFData (FNE.Graph f)
+  where
+    rnf (FNE.Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
+
 
 instance NFDataF IntTreeF
   where
@@ -62,6 +67,8 @@ expGraph = termTree . expTree
 expGraphF :: Int -> Free.Graph IntTreeF
 expGraphF = Free.termTree . expTree
 
+expGraphFNE :: Int -> FNE.Graph IntTreeF
+expGraphFNE = FNE.termTree . expTree
 
 linearGraph :: Int -> Graph IntTreeF
 linearGraph n = mkGraph 0 $
@@ -70,6 +77,10 @@ linearGraph n = mkGraph 0 $
 linearGraphF :: Int -> Free.Graph IntTreeF
 linearGraphF n = mkGraph 0 $
     [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
+
+linearGraphFNE :: Int -> FNE.Graph IntTreeF
+linearGraphFNE n = FNE.mkGraph 0 $
+    [(k, Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
 
 
@@ -113,6 +124,13 @@ reduceGF = fromEnum . Free.runAGGraph max value depth 0
 reduceGFST :: Free.Graph IntTreeF -> Int
 reduceGFST = fromEnum . Free.runAGGraphST max value depth 0
 
+
+reduceGFNE :: FNE.Graph IntTreeF -> Int
+reduceGFNE = fromEnum . FNE.runAGGraph max value depth 0
+
+reduceGFNEST :: FNE.Graph IntTreeF -> Int
+reduceGFNEST = fromEnum . FNE.runAGGraphST max value depth 0
+
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
 reduce_expTree n = bgroup "expTree"
@@ -130,8 +148,15 @@ reduce_expGraphST n = bgroup "expGraphST"
 reduce_expGraphF n = bgroup "expGraphF"
     [bench' (show n) reduceGF $ expGraphF n | n <- [4..n]]
 
+reduce_expGraphFNE n = bgroup "expGraphFNE"
+    [bench' (show n) reduceGFNE $ expGraphFNE n | n <- [4..n]]
+
+
 reduce_expGraphFST n = bgroup "expGraphFST"
     [bench' (show n) reduceGFST $ expGraphF n | n <- [4..n]]
+
+reduce_expGraphFNEST n = bgroup "expGraphFNEST"
+    [bench' (show n) reduceGFNEST $ expGraphFNE n | n <- [4..n]]
 
 
 reduce_linearGraph n = bgroup "linearGraph"
@@ -159,6 +184,15 @@ reduce_linearGraphBigF n = bgroup "linearGraphBigF"
 reduce_linearGraphBigFST n = bgroup "linearGraphBigFST"
     [bench' (show n) reduceGFST $ linearGraphF n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
+
+reduce_linearGraphBigFNE n = bgroup "linearGraphBigFNE"
+    [bench' (show n) reduceGF $ linearGraphF n | n <- [10,20..n]]
+  -- Grows linearly even for sizes that are out of reach for `reduce`
+
+reduce_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
+    [bench' (show n) reduceGFNEST $ linearGraphFNE n | n <- [10,20..n]]
+  -- Grows linearly even for sizes that are out of reach for `reduce`
+
 
 
 conf name = defaultConfig
@@ -207,6 +241,8 @@ main = do
     defaultMainWith (conf "reduce_overhead_expGraphST")    (return ()) [reduce_expGraphST       16]
     defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
     defaultMainWith (conf "reduce_overhead_expGraphFST")   (return ()) [reduce_expGraphFST      16]
+    defaultMainWith (conf "reduce_overhead_expGraphFNE")   (return ()) [reduce_expGraphFNE      16]
+    defaultMainWith (conf "reduce_overhead_expGraphFNEST")   (return ()) [reduce_expGraphFNEST      16]
     defaultMainWith (conf "reduce_sharing_expTree")      (return ()) [reduce_expTree        12]
     defaultMainWith (conf "reduce_sharing_expGraph")     (return ()) [reduce_expGraph       12]
     defaultMainWith (conf "reduce_sharing_expGraphST")     (return ()) [reduce_expGraphST       12]
@@ -217,6 +253,8 @@ main = do
     defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBigST 200]
     defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
     defaultMainWith (conf "reduce_big_linearGraphFST")     (return ()) [reduce_linearGraphBigFST 200]
+    defaultMainWith (conf "reduce_big_linearGraphFNE")     (return ()) [reduce_linearGraphBigFNE 200]
+    defaultMainWith (conf "reduce_big_linearGraphFNEST")     (return ()) [reduce_linearGraphBigFNEST 200]
 
     defaultMainWith (conf "repmin_overhead_expTree")     (return ()) [repmin_expTree        16]
     defaultMainWith (conf "repmin_overhead_expGraph")    (return ()) [repmin_expGraph       16]
