@@ -483,8 +483,9 @@ runAGGraphST res syn inh d g = runST runM
                      MVec.set dmap Nothing
                      MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
+                     count <- newSTRef 0
                      let iter (n, t) = runDownST res  syn' inh' umap dmap n
-                                       (fromJust $ dmapFin Vec.! n) umapFin t
+                                       (fromJust $ dmapFin Vec.! n) umapFin count t
                      mapM_ iter (IntMap.toList $ _eqs g)
                      dmapFin <- Vec.unsafeFreeze dmap
                      umapFin <- Vec.unsafeFreeze umap
@@ -494,14 +495,15 @@ runAGGraphST res syn inh d g = runST runM
 -- | Auxiliary function for 'runAGGraphST'.
 runDownST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
        -> Vec.MVector s u -> Vec.MVector s (Maybe d) -> Node
-     -> d -> Vec.Vector u -> f Node -> ST s ()
-runDownST res syn inh ref' ref n d umap t =
+     -> d -> Vec.Vector u -> STRef s Int -> f Node -> ST s ()
+runDownST res syn inh ref' ref n d umap count t =
                mdo let u = syn (u,d) unNumbered result
                    let m = inh (u,d) unNumbered result
-                   count <- newSTRef 0
+                   writeSTRef count 0
                    let run' :: Node -> ST s (Numbered (u,d))
                        run' s = do i <- readSTRef count
-                                   writeSTRef count (i+1)
+                                   let j = i+1
+                                   j `seq` writeSTRef count j
                                    let d' = Map.findWithDefault d (Numbered (i,undefined)) m
                                        u' = umap Vec.! s
                                    old <- MVec.unsafeRead ref s
