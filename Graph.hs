@@ -346,9 +346,6 @@ fromListEither fa fb as = IntMap.fromList [(i,(am IntMap.! i, bm IntMap.! i)) | 
     am = IntMap.fromListWith fa [(i,a) | (i, Left a)  <- as]
     bm = IntMap.fromListWith fb [(i,b) | (i, Right b) <- as]
 
-dropNumber :: Numbered a -> a
-dropNumber (Numbered (_,a)) = a
-
 
 runRewriteGraph :: forall f g u d . (Traversable f, Functor g, Traversable g)
     => (d -> d -> d)          -- ^ Resolution of downwards state
@@ -439,9 +436,9 @@ runInhGraph res down d env g = IntMap.fromListWith res
     $ graphEdges g
   where
     downNode :: (Functor f, Foldable f) => Node -> f (Numbered Node) -> [(Node,d)]
-    downNode n f = Foldable.toList $ fmap (\a -> (dropNumber a, Map.findWithDefault (snd $ env n) a dm)) f
+    downNode n f = Foldable.toList $ fmap (\a -> (unNumbered a, Map.findWithDefault (snd $ env n) a dm)) f
       where
-        dm = explicit down (env n) (env . dropNumber) f
+        dm = explicit down (env n) (env . unNumbered) f
 
 -- | Run a bidirectional state automaton over a term graph
 runAGGraph :: Traversable f

@@ -108,7 +108,6 @@ runAGGraphST res syn inh d g = runST runM
                      let iter (n, t) = do 
                            u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin count t   
                            MVec.unsafeWrite umap n u
-                           return ()
                      mapM_ iter (IntMap.toList $ _eqs g)
                      dmapFin <- Vec.unsafeFreeze dmap
                      umapFin <- Vec.unsafeFreeze umap
