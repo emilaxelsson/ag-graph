@@ -15,7 +15,7 @@ import Data.Traversable
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Control.Monad.State hiding (mapM)
+import Control.Monad.State.Strict hiding (mapM)
 import Prelude hiding (mapM)
 
 
@@ -67,7 +67,8 @@ instance Ord (Numbered a) where
 number :: Traversable f => f a -> f (Numbered a)
 number x = fst $ runState (mapM run x) 0 where
   run b = do n <- get
-             put (n+1)
+             let m = n+1
+             m `seq` put m
              return $ Numbered (n,b)
 
 infix 1 |->

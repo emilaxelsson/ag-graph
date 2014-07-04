@@ -78,7 +78,8 @@ free res syn inh d umap s = run d s where
                   (oldDmap,i) <- get
                   let d' = Map.findWithDefault d (Numbered (i,undefined)) m
                       (u',dmap') = run d' s
-                  put (IntMap.unionWith res dmap' oldDmap, (i+1))
+                  let j = i+1
+                  j `seq` put (IntMap.unionWith res dmap' oldDmap, j)
                   return (Numbered (i, (u',d')))
 
 -- | Alternative implementation of 'runAGGraph' that uses mutable
