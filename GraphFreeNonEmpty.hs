@@ -104,8 +104,9 @@ runAGGraphST res syn inh d g = runST runM
                      MVec.set dmap Nothing
                      MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
+                     count <- newSTRef 0
                      let iter (n, t) = do 
-                           u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin t   
+                           u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin count t   
                            MVec.unsafeWrite umap n u
                            return ()
                      mapM_ iter (IntMap.toList $ _eqs g)
@@ -119,15 +120,16 @@ runAGGraphST res syn inh d g = runST runM
 
 freeST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
        -> Vec.MVector s (Maybe d)
-     -> d -> Vec.Vector u -> f (Free f Node) -> ST s u
-freeST res syn inh ref d umap s = run d s where
+     -> d -> Vec.Vector u -> STRef s Int -> f (Free f Node) -> ST s u
+freeST res syn inh ref d umap count s = run d s where
     run :: d -> f (Free f Node) -> ST s u
     run d t = mdo let u = syn (u,d) unNumbered result
                   let m = inh (u,d) unNumbered result
-                  count <- newSTRef 0
+                  writeSTRef count 0
                   let run' :: Free f Node -> ST s (Numbered (u,d))
                       run' s = do i <- readSTRef count
-                                  writeSTRef count (i+1)
+                                  let j = i+1
+                                  j `seq` writeSTRef count j
                                   let d' = Map.findWithDefault d (Numbered (i,undefined)) m
                                   u' <- runF d' s
                                   return (Numbered (i, (u',d')))
