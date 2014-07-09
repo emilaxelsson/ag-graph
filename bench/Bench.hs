@@ -92,6 +92,15 @@ linearGraphFNE n = FNE.mkGraph 0 $
 -- This benchmark is designed to be as simple as possible: only integer
 -- attributes and simple semantic functions. This is to make be able to test the
 -- efficiency of the run functions themselves.
+--
+-- The benchmark is run with different AG implementations and graph
+-- representations. The suffix "F" indicates that the graph
+-- representation from "GraphFree" is used. The suffix "ST" indicates
+-- that the mutable vector implementation is used. The suffix "FNE"
+-- indicates that the graph representation from "GraphFreeNonEmpty" is
+-- used. The benchmarks mentioned in the paper use the mutable vector
+-- implementation.
+
 
 newtype Value = Value Int deriving (Eq, Ord, Show, Num, Enum)
 newtype Depth = Depth Int deriving (Eq, Ord, Show, Num, Enum)
