@@ -51,7 +51,7 @@ data IntTreeF a = Leaf Int | Node a a
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 leavesBelowI :: Inh IntTreeF atts Int
-leavesBelowI (Leaf i)      = Map.empty
+leavesBelowI (Leaf i)      = o
 leavesBelowI (Node t1 t2)  = t1 |-> d' & t2 |-> d'
             where d' = above - 1
 
@@ -202,7 +202,7 @@ typeInfS _                        =  Nothing
 typeInfI :: (Maybe Type :< atts) => Inh ExpF atts Env
 typeInfI (Iter' v n i b)  =  b |-> insertEnv v ti above
                                where ti = typeOf i
-typeInfI _                =  Map.empty
+typeInfI _                =  o
 
 typeInf :: Env -> Tree ExpF -> Maybe Type
 typeInf = runAG typeInfS typeInfI
@@ -262,7 +262,7 @@ minS (Leaf i)    =  MinS i
 minS (Node a b)  =  min (below a) (below b)
 
 minI :: Inh IntTreeF atts MinI
-minI _ = Map.empty
+minI _ = o
 
 rep ::  (MinI :< atts) => Syn IntTreeF atts (Tree IntTreeF)
 rep (Leaf i)    =  In (Leaf globMin)
@@ -315,7 +315,7 @@ gateDelay (Node a b)  =
 
 gateLoad :: Inh IntTreeF atts Load
 gateLoad (Node a b)  = a |-> 1 & b |-> 1
-gateLoad _           = Map.empty
+gateLoad _           = o
 
 delay :: Circuit -> Load -> Delay
 delay g l = runAGGraph (+) gateDelay gateLoad l g

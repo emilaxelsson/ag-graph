@@ -1,4 +1,4 @@
-{-# LANGUAGE Rank2Types, FlexibleContexts, ImplicitParams, GADTs, TypeOperators, MultiParamTypeClasses, IncoherentInstances, CPP, StandaloneDeriving, UndecidableInstances #-}
+{-# LANGUAGE Rank2Types, FlexibleContexts, ImplicitParams, GADTs, TypeOperators, MultiParamTypeClasses, IncoherentInstances, CPP, StandaloneDeriving, UndecidableInstances, FunctionalDependencies, TypeFamilies #-}
 
 module AG
     ( module Projection
@@ -74,20 +74,48 @@ number x = fst $ runState (mapM run x) 0 where
 infix 1 |->
 infixr 0 &
 
--- | left-biased union of two mappings.
 
-(&) :: Ord k => Map k v -> Map k v -> Map k v
-(&) = Map.union
+class Mapping m k | m -> k where
+    -- | left-biased union of two mappings.
+    (&) :: m v -> m v -> m v
 
--- | This operator constructs a singleton mapping.
+    -- | This operator constructs a singleton mapping.
+    (|->) :: k -> v -> m v
 
-(|->) :: k -> a -> Map k a
-(|->) = Map.singleton
+    -- | This is the empty mapping.
+    o :: m v
 
--- | This is the empty mapping.
+    -- | This function constructs the pointwise product of two maps each
+    -- with a default value.
+    prodMap :: v1 -> v2 -> m v1 -> m v2 -> m (v1, v2)
 
-o :: Map k a
-o = Map.empty
+-- | This type is needed to construct the product of two DTAs.
+
+data ProdState p q = LState p
+                   | RState q
+                   | BState p q
+
+
+instance Ord k => Mapping (Map k) k where
+    (&) = Map.union
+    (|->) = Map.singleton
+    o = Map.empty
+
+    prodMap p q mp mq = Map.map final $ Map.unionWith combine ps qs
+      where 
+          ps = Map.map LState mp
+          qs = Map.map RState mq
+          combine (LState p) (RState q) = BState p q
+          combine (RState q) (LState p) = BState p q
+          combine _ _                   = error "unexpected merging"
+          final (LState p) = (p, q)
+          final (RState q) = (p, q)
+          final (BState p q) = (p,q)
+
+
+
+
+
 
 -- | This function provides access to components of the states from
 -- "below".
@@ -129,11 +157,11 @@ prodSyn sp sq t = (sp t, sq t)
 
 
 -- | Definition of an inherited attribute
-type Inh' f p q = forall i . (Ord i, ?below :: i -> p, ?above :: p)
-                                => f i -> Map i q
+type Inh' f p q = forall m i . (Mapping m i, ?below :: i -> p, ?above :: p)
+                                => f i -> m q
 type Inh f p q = (q :< p) => Inh' f p q
 
-type InhExpl f p q = forall i . Ord i => p -> (i -> p) -> f i -> Map i q
+type InhExpl f p q = forall m i . Mapping m i => p -> (i -> p) -> f i -> m q
 
 prodInh :: (p :< c, q :< c)
                => Inh f c p -> Inh f c q -> Inh f c (p,q)
@@ -144,25 +172,6 @@ prodInh sp sq t = prodMap above above (sp t) (sq t)
 (>*<) :: (p :< c, q :< c, Functor f)
          => Inh f c p -> Inh f c q -> Inh f c (p,q)
 (>*<) = prodInh
-
--- | This type is needed to construct the product of two DTAs.
-
-data ProdState p q = LState p
-                   | RState q
-                   | BState p q
--- | This function constructs the pointwise product of two maps each
--- with a default value.
-
-prodMap :: (Ord i) => p -> q -> Map i p -> Map i q -> Map i (p,q)
-prodMap p q mp mq = Map.map final $ Map.unionWith combine ps qs
-    where ps = Map.map LState mp
-          qs = Map.map RState mq
-          combine (LState p) (RState q) = BState p q
-          combine (RState q) (LState p) = BState p q
-          combine _ _                   = error "unexpected merging"
-          final (LState p) = (p, q)
-          final (RState q) = (p, q)
-          final (BState p q) = (p,q)
 
 
 
@@ -209,4 +218,3 @@ runRewrite' :: (Traversable f, Functor g) =>
 runRewrite' up down trans d' t = (u,t')
     where d      = d' u
           (u,t') = runRewrite up down trans d t
-

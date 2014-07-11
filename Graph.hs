@@ -8,6 +8,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 --------------------------------------------------------------------------------
 -- |
@@ -496,13 +499,14 @@ runDownST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) 
 runDownST res syn inh ref' ref n d umap count t =
                mdo let u = syn (u,d) unNumbered result
                    let m = inh (u,d) unNumbered result
+                   stvec <- lookupDef 2 m
                    writeSTRef count 0
                    let run' :: Node -> ST s (Numbered (u,d))
                        run' s = do i <- readSTRef count
                                    let j = i+1
                                    j `seq` writeSTRef count j
-                                   let d' = Map.findWithDefault d (Numbered (i,undefined)) m
-                                       u' = umap Vec.! s
+                                   d' <- lookupVec i stvec d
+                                   let u' = umap Vec.! s
                                    old <- MVec.unsafeRead ref s
                                    let new = case old of
                                                Just o -> res o d'
@@ -510,4 +514,65 @@ runDownST res syn inh ref' ref n d umap count t =
                                    MVec.unsafeWrite ref s (Just new)
                                    return (Numbered (i, (u',d')))
                    result <- Traversable.mapM run' t
+--                   size <- readSTRef count
                    MVec.unsafeWrite ref' n u
+
+data STMap k v where
+    Single :: (forall s . (Vec.MVector s (Maybe v) -> ST s ())) -> STMap (Numbered k) v
+    Empty :: STMap  (Numbered k) v
+    Prod :: STMap (Numbered k) v1 -> STMap (Numbered k) v2 -> STMap (Numbered k) (v1,v2)
+
+data STVec s v where
+    SingleV :: Vec.MVector s (Maybe v) -> STVec s v
+    EmptyV :: STVec s v
+    ProdV :: STVec s v1 -> STVec s v2 -> STVec s (v1,v2)
+
+
+
+lookupVec :: Int -> STVec s v -> v -> ST s v
+lookupVec i = run
+    where run :: STVec s v -> v -> ST s v
+          run (SingleV v) d = do r <- MVec.unsafeRead v i
+                                 return $ case r of
+                                            Nothing -> d
+                                            Just v -> v
+          run EmptyV d = return d
+          run (ProdV v1 v2) (d1, d2) = liftM2 (,) (run v1 d1) (run v2 d2)
+
+lookupDef :: Int -> STMap (Numbered k) v -> ST s (STVec s v)
+lookupDef size m = run m
+    where run :: STMap (Numbered k) v -> ST s (STVec s v)
+          run (Single m) = do v <- MVec.replicate size (Nothing)
+                              m v
+                              return $ SingleV v 
+          run Empty = return EmptyV
+          run (Prod x y) = liftM2 ProdV (run x) (run y)
+
+
+instance Mapping (STMap (Numbered k)) (Numbered k) where
+    (Numbered (i,_)) |-> v = Single (\ref -> MVec.unsafeWrite ref i (Just v))
+
+    Empty & m = m
+    m & Empty = m
+    Single m1 & Single m2 = Single (\ref -> m1 ref >> m2 ref)
+    _ & _ = error "union of products not implemented"
+
+    o = Empty
+
+    prodMap _ _ m1 m2 = Prod m1 m2
+
+
+--     mkSingle (Numbered (i,_)) v = STMapSimple (\ref -> MVec.unsafeWrite ref i v)
+--     combine (STMapSimple m1) (STMapSimple m2) = STMapSimple (\ref -> m1 ref >> m2 ref)
+--     mkEmpty = STMapSimple (const $ return ())
+
+-- instance (STMapping m1 (Numbered k) v1, STMapping m2 (Numbered k) v2) 
+--     => STMapping (m1,m2) (Numbered k) (v1,v2) where
+--     mkSingle k (v1,v2) = (mkSingle k v1, mkSingle k v2)
+--     combine (m1,m2) (n1,n2) = (combine m1 n1, combine m2 n2)
+--     mkEmpty = (mkEmpty,mkEmpty)
+
+
+
+
+
