@@ -9,7 +9,8 @@
 import Data.Monoid
 
 import Criterion.Main
-import Criterion.Config
+import Criterion.Main.Options
+import Criterion.Types
 import Control.DeepSeq
 
 import AG
@@ -205,8 +206,8 @@ reduce_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
 
 
 conf name = defaultConfig
-    { cfgReport      = Last $ Just $ "reports/" ++ name ++ ".html"
-    , cfgSummaryFile = Last $ Just $ "reports/" ++ name ++ ".csv"
+    { reportFile      = Just $ "reports/" ++ name ++ ".html"
+    , csvFile = Just $ "reports/" ++ name ++ ".csv"
     }
 
 
@@ -247,7 +248,7 @@ repmin_linearGraphBig n = bgroup "linearGraphBig"
 main = do
     -- defaultMainWith (conf "reduce_overhead_expTree")     (return ()) [reduce_expTree        16]
     -- defaultMainWith (conf "reduce_overhead_expGraph")    (return ()) [reduce_expGraph       16]
-    defaultMainWith (conf "reduce_overhead_expGraphST")    (return ()) [reduce_expGraphST       16]
+    defaultMainWith (conf "reduce_overhead_expGraphST")     [reduce_expGraphST       16]
     -- defaultMainWith (conf "reduce_overhead_expGraphF")   (return ()) [reduce_expGraphF      16]
     -- defaultMainWith (conf "reduce_overhead_expGraphFST")   (return ()) [reduce_expGraphFST      16]
     -- defaultMainWith (conf "reduce_overhead_expGraphFNE")   (return ()) [reduce_expGraphFNE      16]
@@ -259,7 +260,7 @@ main = do
     -- defaultMainWith (conf "reduce_sharing_linearGraph")  (return ()) [reduce_linearGraph    12]
     -- defaultMainWith (conf "reduce_sharing_linearGraphF") (return ()) [reduce_linearGraphF   12]
     -- defaultMainWith (conf "reduce_big_linearGraph")      (return ()) [reduce_linearGraphBig 200]
-    defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBigST 200]
+    -- defaultMainWith (conf "reduce_big_linearGraphST")      (return ()) [reduce_linearGraphBigST 200]
     -- defaultMainWith (conf "reduce_big_linearGraphF")     (return ()) [reduce_linearGraphBigF 200]
     -- defaultMainWith (conf "reduce_big_linearGraphFST")     (return ()) [reduce_linearGraphBigFST 200]
     -- defaultMainWith (conf "reduce_big_linearGraphFNE")     (return ()) [reduce_linearGraphBigFNE 200]
