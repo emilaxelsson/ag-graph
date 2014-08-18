@@ -499,12 +499,12 @@ runDownST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) 
 runDownST res syn inh ref' ref n d umap count t =
                mdo let u = syn (u,d) unNumbered result
                    let m = inh (u,d) unNumbered result
-                   stvec <- lookupDef 2 m
+
                    writeSTRef count 0
-                   let run' :: Node -> ST s (Numbered (u,d))
-                       run' s = do i <- readSTRef count
+                   let run' stvec s = do
+                                   i <- readSTRef count
                                    let j = i+1
-                                   j `seq` writeSTRef count j
+                                   writeSTRef count j
                                    d' <- lookupVec i stvec d
                                    let u' = umap Vec.! s
                                    old <- MVec.unsafeRead ref s
@@ -513,9 +513,11 @@ runDownST res syn inh ref' ref n d umap count t =
                                                _      -> d'
                                    MVec.unsafeWrite ref s (Just new)
                                    return (Numbered (i, (u',d')))
-                   result <- Traversable.mapM run' t
---                   size <- readSTRef count
+                   result <- Traversable.mapM (run' stvec) t
+                   size <- readSTRef count
+                   stvec <- lookupDef size m
                    MVec.unsafeWrite ref' n u
+                   return ()
 
 data STMap k v where
     Single :: (forall s . (Vec.MVector s (Maybe v) -> ST s ())) -> STMap (Numbered k) v
