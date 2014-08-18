@@ -137,6 +137,23 @@ instance Mapping (NumMap k) (Numbered k) where
 
 
 
+-- | Symbolic map 
+data SymMap k v where
+    SingMap :: IntMap v -> SymMap k v
+    ProdMap :: SymMap k v1 -> SymMap k v2 -> SymMap k (v1,v2)
+
+lookupSymMap :: Int -> SymMap t a -> a -> a
+lookupSymMap k (SingMap m) = \ d -> IntMap.findWithDefault d k m
+lookupSymMap k (ProdMap m1 m2) = \ (d1,d2) -> (lookupSymMap k m1 d1, lookupSymMap k m2 d2)
+
+instance Mapping (SymMap k) (Numbered k) where
+    SingMap m1 & SingMap m2 = SingMap (IntMap.union m1 m2)
+    Numbered (k,_)|-> v = SingMap $ IntMap.singleton k v
+    o = SingMap IntMap.empty
+
+    prodMap _ _ = ProdMap
+
+
 
 
 
