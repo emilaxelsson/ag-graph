@@ -12,6 +12,8 @@ import ProjectionSimple as Projection
 #endif
 
 import Data.Traversable
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -105,6 +107,27 @@ instance Ord k => Mapping (Map k) k where
       where 
           ps = Map.map LState mp
           qs = Map.map RState mq
+          combine (LState p) (RState q) = BState p q
+          combine (RState q) (LState p) = BState p q
+          combine _ _                   = error "unexpected merging"
+          final (LState p) = (p, q)
+          final (RState q) = (p, q)
+          final (BState p q) = (p,q)
+
+newtype NumMap k v = NumMap {unNumMap :: IntMap v}
+
+lookupNumMap :: Int -> NumMap t a -> a -> a
+lookupNumMap k (NumMap m) d = IntMap.findWithDefault d k m
+
+instance Mapping (NumMap k) (Numbered k) where
+    NumMap m1 & NumMap m2 = NumMap (IntMap.union m1 m2)
+    Numbered (k,_)|-> v = NumMap $ IntMap.singleton k v
+    o = NumMap IntMap.empty
+
+    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.map final $ IntMap.unionWith combine ps qs
+      where 
+          ps = IntMap.map LState mp
+          qs = IntMap.map RState mq
           combine (LState p) (RState q) = BState p q
           combine (RState q) (LState p) = BState p q
           combine _ _                   = error "unexpected merging"
