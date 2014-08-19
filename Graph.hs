@@ -63,7 +63,7 @@ import qualified Data.IntMap as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 
-import qualified Data.Map as Map
+
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 import Data.List (intercalate)
@@ -369,7 +369,7 @@ runRewriteGraph res up down rew d g = (fst $ env $ _root g, appCxtGraph gg)
     rewNode n f = do
         tell [(n, Left (up f))]
         let dm = down f
-        Traversable.forM f $ \n -> tell [(n, Right (Map.findWithDefault (snd ?above) n dm))]
+        Traversable.forM f $ \n -> tell [(n, Right (IntMap.findWithDefault (snd ?above) n dm))]
         return (rew f)
       where
         ?above = env n
@@ -439,7 +439,7 @@ runInhGraph res down d env g = IntMap.fromListWith res
     $ graphEdges g
   where
     downNode :: (Functor f, Foldable f) => Node -> f (Numbered Node) -> [(Node,d)]
-    downNode n f = Foldable.toList $ fmap (\a -> (unNumbered a, Map.findWithDefault (snd $ env n) a dm)) f
+    downNode n f = Foldable.toList $ fmap (\(Numbered i a) -> (a, lookupNumMap (snd $ env n) i dm)) f
       where
         dm = explicit down (env n) (env . unNumbered) f
 
@@ -505,14 +505,14 @@ runDownST res syn inh ref' ref n d umap count t =
                                    i <- readSTRef count
                                    let j = i+1
                                    writeSTRef count j
-                                   let d' = lookupNumMap i m d
+                                   let d' = lookupNumMap d i m
                                        u' = umap Vec.! s
                                    old <- MVec.unsafeRead ref s
                                    let new = case old of
                                                Just o -> res o d'
                                                _      -> d'
                                    MVec.unsafeWrite ref s (Just new)
-                                   return (Numbered (i, (u',d')))
+                                   return (Numbered i (u',d'))
                    result <- Traversable.mapM run' t
                    MVec.unsafeWrite ref' n u
                    return ()

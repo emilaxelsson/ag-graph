@@ -1,5 +1,16 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE Rank2Types, FlexibleContexts, ImplicitParams, GADTs, TypeOperators, MultiParamTypeClasses, IncoherentInstances, CPP, StandaloneDeriving, UndecidableInstances, FunctionalDependencies, TypeFamilies #-}
+{-# LANGUAGE CPP                    #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE ImplicitParams         #-}
+{-# LANGUAGE IncoherentInstances    #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE Rank2Types             #-}
+{-# LANGUAGE StandaloneDeriving     #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 module AG
     ( module Projection
@@ -12,11 +23,11 @@ import Projection
 import ProjectionSimple as Projection
 #endif
 
-import Data.Traversable
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Data.Traversable
+
+
 
 import Control.Monad.State.Strict hiding (mapM)
 import Prelude hiding (mapM)
@@ -54,16 +65,11 @@ zero :: Zero -> a
 zero _ = error "zero"
 
 -- | This type is used for numbering components of a functorial value.
-newtype Numbered a = Numbered (Int, a)
+data Numbered a = Numbered Int a
 
 unNumbered :: Numbered a -> a
-unNumbered (Numbered (_, x)) = x
+unNumbered (Numbered _ x) = x
 
-instance Eq (Numbered a) where
-    Numbered (i,_) == Numbered (j,_) = i == j
-
-instance Ord (Numbered a) where
-    compare (Numbered (i,_))  (Numbered (j,_)) = i `compare` j
 
 -- | This function numbers the components of the given functorial
 -- value with consecutive integers starting at 0.
@@ -72,7 +78,7 @@ number x = fst $ runState (mapM run x) 0 where
   run b = do n <- get
              let m = n+1
              m `seq` put m
-             return $ Numbered (n,b)
+             return $ Numbered n b
 
 infix 1 |->
 infixr 0 &
@@ -92,53 +98,30 @@ class Mapping m k | m -> k where
     -- with a default value.
     prodMap :: v1 -> v2 -> m v1 -> m v2 -> m (v1, v2)
 
--- | This type is needed to construct the product of two DTAs.
-
-data ProdState p q = LState p
-                   | RState q
-                   | BState p q
-
-
-instance Ord k => Mapping (Map k) k where
-    (&) = Map.union
-    (|->) = Map.singleton
-    o = Map.empty
-
-    prodMap p q mp mq = Map.mergeWithKey merge (Map.map (,q)) (Map.map (p,)) mp mq
-      where merge _ p q = Just (p,q)
 
 newtype NumMap k v = NumMap {unNumMap :: IntMap v}
 
-lookupNumMap :: Int -> NumMap t a -> a -> a
-lookupNumMap k (NumMap m) d = IntMap.findWithDefault d k m
+lookupNumMap :: a -> Int -> NumMap t a -> a
+lookupNumMap d k (NumMap m) = IntMap.findWithDefault d k m
 
 instance Mapping (NumMap k) (Numbered k) where
     NumMap m1 & NumMap m2 = NumMap (IntMap.union m1 m2)
-    Numbered (k,_)|-> v = NumMap $ IntMap.singleton k v
+    Numbered k _ |-> v = NumMap $ IntMap.singleton k v
     o = NumMap IntMap.empty
 
-    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.mergeWithKey merge (IntMap.map (,q)) (IntMap.map (p,)) mp mq
+    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.mergeWithKey merge 
+                                          (IntMap.map (,q)) (IntMap.map (p,)) mp mq
       where merge _ p q = Just (p,q)
 
 
--- | Symbolic map 
-data SymMap k v where
-    SingMap :: IntMap v -> SymMap k v
-    ProdMap :: SymMap k v1 -> SymMap k v2 -> SymMap k (v1,v2)
+instance Mapping IntMap Int where
+    (&) = IntMap.union
+    (|->) = IntMap.singleton
+    o = IntMap.empty
 
-lookupSymMap :: Int -> SymMap t a -> a -> a
-lookupSymMap k (SingMap m) = \ d -> IntMap.findWithDefault d k m
-lookupSymMap k (ProdMap m1 m2) = \ (d1,d2) -> (lookupSymMap k m1 d1, lookupSymMap k m2 d2)
-
-instance Mapping (SymMap k) (Numbered k) where
-    SingMap m1 & SingMap m2 = SingMap (IntMap.union m1 m2)
-    Numbered (k,_)|-> v = SingMap $ IntMap.singleton k v
-    o = SingMap IntMap.empty
-
-    prodMap _ _ = ProdMap
-
-
-
+    prodMap p q mp mq = IntMap.mergeWithKey merge 
+                        (IntMap.map (,q)) (IntMap.map (p,)) mp mq
+      where merge _ p q = Just (p,q)
 
 
 -- | This function provides access to components of the states from
@@ -206,9 +189,9 @@ prodInh sp sq t = prodMap above above (sp t) (sq t)
 runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> d -> Tree f -> u
 runAG up down d (In t) = u where
         t' = fmap bel $ number t
-        bel (Numbered (i,s)) =
-            let d' = Map.findWithDefault d (Numbered (i,undefined)) m
-            in Numbered (i, (runAG up down d' s, d'))
+        bel (Numbered i s) =
+            let d' = lookupNumMap d i m
+            in Numbered i (runAG up down d' s, d')
         m = explicit down (u,d) unNumbered t'
         u = explicit up (u,d) unNumbered t'
 
@@ -227,10 +210,10 @@ runRewrite :: (Traversable f, Functor g) =>
            d -> Tree f -> (u, Tree g)
 runRewrite up down trans d (In t) = (u,t'') where
         t' = fmap bel $ number t
-        bel (Numbered (i,s)) =
-            let d' = Map.findWithDefault d (Numbered (i,undefined)) m
+        bel (Numbered i s) =
+            let d' = lookupNumMap d i m
                 (u', s') = runRewrite up down trans d' s
-            in Numbered (i, ((u', d'),s'))
+            in Numbered i ((u', d'),s')
         m = explicit down (u,d) (fst . unNumbered) t'
         u = explicit up (u,d) (fst . unNumbered) t'
         t'' = join $ fmap (snd . unNumbered) $ explicit trans (u,d) (fst . unNumbered) t'

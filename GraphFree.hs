@@ -25,7 +25,7 @@ import Graph (Node, _root, _eqs, _next)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 
-import qualified Data.Map as Map
+
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 
@@ -76,11 +76,11 @@ free res syn inh d umap s = run d s where
               run' :: Free f Node -> State (IntMap d, Int) (Numbered ((u,d)))
               run' s = do
                   (oldDmap,i) <- get
-                  let d' = Map.findWithDefault d (Numbered (i,undefined)) m
+                  let d' = lookupNumMap d i m
                       (u',dmap') = run d' s
                   let j = i+1
                   j `seq` put (IntMap.unionWith res dmap' oldDmap, j)
-                  return (Numbered (i, (u',d')))
+                  return (Numbered i (u',d'))
 
 -- | Alternative implementation of 'runAGGraph' that uses mutable
 -- vectors for caching intermediate values.
@@ -133,9 +133,9 @@ freeST res syn inh ref d umap count s = run d s where
                             run' s = do i <- readSTRef count
                                         let j = i+1
                                         j `seq` writeSTRef count j
-                                        let d' = Map.findWithDefault d (Numbered (i,undefined)) m
+                                        let d' = lookupNumMap d i m
                                         u' <- run d' s
-                                        return (Numbered (i, (u',d')))
+                                        return (Numbered i (u',d'))
                         result <- Traversable.mapM run' t
                         return u
 
