@@ -25,14 +25,15 @@ import ProjectionSimple as Projection
 
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Data.Traversable
+import Data.Traversable (Traversable)
+import qualified Data.Traversable as Traversable
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
+import Control.Applicative
 
 
+import Control.Monad.State.Strict
 
-import Control.Monad.State.Strict hiding (mapM)
-import Prelude hiding (mapM)
 
 
 data Free f a = In (f (Free f a))
@@ -65,6 +66,22 @@ instance Foldable f => Foldable (Free f) where
               run (In t) = Foldable.foldMap run t
 
 
+instance (Traversable f) => Traversable (Free f) where
+    traverse f = run
+        where run (Ret a) = Ret <$> f a
+              run (In t) = In <$> Traversable.traverse run t
+
+    sequenceA (Ret a) = Ret <$> a
+    sequenceA (In t) = In <$> Traversable.traverse Traversable.sequenceA t
+
+    mapM f = run
+        where run (Ret a) = liftM Ret $ f a
+              run (In t) = liftM In $ Traversable.mapM run t
+
+    sequence (Ret a) = liftM Ret a
+    sequence (In t) = liftM In $ Traversable.mapM Traversable.sequence t
+
+
 instance Functor f => Monad (Free f) where
     return = Ret
     (Ret x) >>= f = f x
@@ -93,7 +110,7 @@ unNumbered (Numbered _ x) = x
 -- | This function numbers the components of the given functorial
 -- value with consecutive integers starting at 0.
 number :: Traversable f => f a -> f (Numbered a)
-number x = fst $ runState (mapM run x) 0 where
+number x = fst $ runState (Traversable.mapM run x) 0 where
   run b = do n <- get
              let m = n+1
              m `seq` put m
