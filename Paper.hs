@@ -62,10 +62,10 @@ leavesBelowS (Leaf i)
 leavesBelowS (Node t1 t2)  =  below t1 `Set.union` below t2
 
 leavesBelow' :: Int -> Tree IntTreeF -> Set Int
-leavesBelow' = runAG leavesBelowS leavesBelowI
+leavesBelow' d = runAG leavesBelowS leavesBelowI (const d)
 
 leavesBelowG :: Int -> Graph IntTreeF -> Set Int
-leavesBelowG = runAGGraph min leavesBelowS leavesBelowI
+leavesBelowG d = runAGGraph min leavesBelowS leavesBelowI (const d)
 
 i1 = mkGraph 0
     [ (0, Node 1 2)
@@ -205,10 +205,10 @@ typeInfI (Iter' v n i b)  =  b |-> insertEnv v ti above
 typeInfI _                =  o
 
 typeInf :: Env -> Tree ExpF -> Maybe Type
-typeInf = runAG typeInfS typeInfI
+typeInf env = runAG typeInfS typeInfI (const env)
 
 typeInfG :: Env -> Graph ExpF -> Maybe Type
-typeInfG = runAGGraph trueIntersection typeInfS typeInfI
+typeInfG env = runAGGraph trueIntersection typeInfS typeInfI (const env)
 
 g1 = mkGraph 0
     [ (0, Iter' "x" 1 1 2)
@@ -269,11 +269,11 @@ rep (Leaf i)    =  In (Leaf globMin)
 rep (Node a b)  =  In (Node (below a) (below b))
 
 repmin :: Tree IntTreeF -> Tree IntTreeF
-repmin = snd . runAG' (minS |*| rep) minI init
+repmin = snd . runAG (minS |*| rep) minI init
   where init (MinS i,_) = MinI i
 
 repminG :: Graph IntTreeF -> Tree IntTreeF
-repminG =  snd . runAGGraph' const (minS |*| rep) minI init
+repminG =  snd . runAGGraph const (minS |*| rep) minI init
   where init (MinS i,_) = MinI i
 
 rep' ::  (MinI :< atts) => Rewrite IntTreeF atts IntTreeF
@@ -281,11 +281,11 @@ rep' (Leaf i)    =  In (Leaf globMin)
 rep' (Node a b)  =  In (Node (Ret a) (Ret b))
 
 repmin' :: Tree IntTreeF -> Tree IntTreeF
-repmin' = snd . runRewrite' minS minI rep' init
+repmin' = snd . runRewrite minS minI rep' init
   where init (MinS i) = MinI i
 
 repminG' :: Graph IntTreeF -> Graph IntTreeF
-repminG' = snd . runRewriteGraph' const minS minI rep' init
+repminG' = snd . runRewriteGraph const minS minI rep' init
   where init (MinS i) = MinI i
 
 repminTestG1  = repminG i1
@@ -318,10 +318,10 @@ gateLoad (Node a b)  = a |-> 1 & b |-> 1
 gateLoad _           = o
 
 delay :: Circuit -> Load -> Delay
-delay g l = runAGGraph (+) gateDelay gateLoad l g
+delay g l = runAGGraph (+) gateDelay gateLoad (const l) g
 
 delayTree :: Tree IntTreeF -> Load -> Delay
-delayTree c l = runAG gateDelay gateLoad l c
+delayTree c l = runAG gateDelay gateLoad (const l) c
 
 circTestG1 = delay i1 3
 circTestT1 = delayTree (unravelGraph i1) 3

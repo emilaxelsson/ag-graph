@@ -207,19 +207,19 @@ prodInh sp sq t = prodMap above above (sp t) (sq t)
 -- transformations. Both state transformations can depend mutually
 -- recursive on each other.
 
-runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> d -> Tree f -> u
-runAG up down d (In t) = u where
+runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> (u -> d) -> Tree f -> u
+runAG up down dinit t = uFin where
+    dFin = dinit uFin
+    uFin = run dFin t 
+    run d (In t) = u where
         t' = fmap bel $ number t
         bel (Numbered i s) =
             let d' = lookupNumMap d i m
-            in Numbered i (runAG up down d' s, d')
+            in Numbered i (run d' s, d')
         m = explicit down (u,d) unNumbered t'
         u = explicit up (u,d) unNumbered t'
 
-runAG' :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> (u -> d) -> Tree f -> u
-runAG' syn inh df t = let u = runAG syn inh d t
-                          d = df u
-                      in u
+
 
 -- | This combinator runs a stateful term homomorphisms with a state
 -- space produced both on a bottom-up and a top-down state
@@ -228,21 +228,16 @@ runAG' syn inh df t = let u = runAG syn inh d t
 runRewrite :: (Traversable f, Functor g) =>
            Syn' f (u,d) u -> Inh' f (u,d) d ->
            Rewrite f (u,d) g ->
-           d -> Tree f -> (u, Tree g)
-runRewrite up down trans d (In t) = (u,t'') where
+           (u -> d) -> Tree f -> (u, Tree g)
+runRewrite up down trans dinit t = res where
+    dFin = dinit uFin
+    res@(uFin,_) = run dFin t
+    run d (In t) = (u,t'') where
         t' = fmap bel $ number t
         bel (Numbered i s) =
             let d' = lookupNumMap d i m
-                (u', s') = runRewrite up down trans d' s
+                (u', s') = run d' s
             in Numbered i ((u', d'),s')
         m = explicit down (u,d) (fst . unNumbered) t'
         u = explicit up (u,d) (fst . unNumbered) t'
         t'' = join $ fmap (snd . unNumbered) $ explicit trans (u,d) (fst . unNumbered) t'
-
-runRewrite' :: (Traversable f, Functor g) =>
-           Syn' f (u,d) u -> Inh' f (u,d) d ->
-           Rewrite f (u,d) g ->
-           (u -> d) -> Tree f -> (u, Tree g)
-runRewrite' up down trans d' t = (u,t')
-    where d      = d' u
-          (u,t') = runRewrite up down trans d t

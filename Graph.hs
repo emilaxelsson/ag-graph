@@ -46,9 +46,7 @@ module Graph
     , reindexGraph
     , appCxtGraph
     , runRewriteGraph
-    , runRewriteGraph'
     , runAGGraph
-    , runAGGraph'
     , runAGGraphST
     ) where
 
@@ -351,17 +349,18 @@ fromListEither fa fb as = IntMap.fromList [(i,(am IntMap.! i, bm IntMap.! i)) | 
 
 
 runRewriteGraph :: forall f g u d . (Traversable f, Functor g, Traversable g)
-    => (d -> d -> d)          -- ^ Resolution of downwards state
+    => (d -> d -> d)       -- ^ Resolution of downwards state
     -> Syn'    f (u, d) u  -- ^ Bottom-up state propagation
     -> Inh'    f (u, d) d  -- ^ Top-down state propagation
     -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
-    -> d                      -- ^ Initial top-down state
-    -> Graph f                -- ^ Original term
-    -> (u, Graph g)           -- ^ Final state and rewritten term
-runRewriteGraph res up down rew d g = (fst $ env $ _root g, appCxtGraph gg)
-  where
+    -> (u -> d)            -- ^ Initial top-down state
+    -> Graph f             -- ^ Original term
+    -> (u, Graph g)        -- ^ Final state and rewritten term
+runRewriteGraph res up down rew dinit g = (uFin,appCxtGraph gg) where
+    dFin    = dinit uFin
+    uFin    = fst $ env $ _root g
     (gg,ws) = runWriter $ mapGraphM rewNode g
-    ws'     = (_root g, Right d) : ws
+    ws'     = (_root g, Right dFin) : ws
     env n   = fromListEither errUp res ws' IntMap.! n
     errUp   = error "runRewriteGraph1: over-constrained bottom-up state"
 
@@ -374,18 +373,6 @@ runRewriteGraph res up down rew d g = (fst $ env $ _root g, appCxtGraph gg)
       where
         ?above = env n
         ?below = env
-
-runRewriteGraph' :: forall f g u d . (Traversable f, Functor g, Traversable g)
-    => (d -> d -> d)          -- ^ Resolution of downwards state
-    -> Syn'    f (u, d) u  -- ^ Bottom-up state propagation
-    -> Inh'    f (u, d) d  -- ^ Top-down state propagation
-    -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
-    -> (u -> d)            -- ^ Initial top-down state
-    -> Graph f                -- ^ Original term
-    -> (u, Graph g)           -- ^ Final state and rewritten term
-runRewriteGraph' res up down rew d' g = (u, g')
-    where (u, g') = runRewriteGraph res up down rew d g
-          d       = d' u
 
 -- -- For reference, runUpState from compdata
 -- runUpState1 :: Functor f => UpState f q -> Term f -> q
@@ -445,43 +432,41 @@ runInhGraph res down d env g = IntMap.fromListWith res
 
 -- | Run a bidirectional state automaton over a term graph
 runAGGraph :: Traversable f
-    => (d -> d -> d)         -- ^ Resolution of top-down state
+    => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
-    -> d                     -- ^ Initial top-down state
+    -> (u -> d)        -- ^ Initial top-down state
     -> Graph f
     -> u
-runAGGraph res up down d g = envU IntMap.! _root g
-  where
+runAGGraph res up down dinit g = uFin where
+    uFin  = envU IntMap.! _root g
+    dFin  = dinit uFin
     envU  = runSynGraph up env g
-    envD  = runInhGraph res down d env g
+    envD  = runInhGraph res down dFin env g
     env n = (envU IntMap.! n, envD IntMap.! n)
 
-
-runAGGraph' :: Traversable f => (d -> d -> d) -> Syn' f (u,d) u -> Inh' f (u,d) d -> (u -> d) -> Graph f -> u
-runAGGraph' res syn inh df g = let u = runAGGraph res syn inh d g
-                                   d = df u
-                               in u
 
 
 -- | This is an alternative implementation of 'runAGGraph' that uses
 -- mutable vectors for caching intermediate values.
 runAGGraphST :: forall f d u .Traversable f
-    => (d -> d -> d)         -- ^ Resolution of top-down state
+    => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
-    -> d                     -- ^ Initial top-down state
+    -> (u -> d)        -- ^ Initial top-down state
     -> Graph f
     -> u
-runAGGraphST res syn inh d g = runST runM 
+runAGGraphST res syn inh dinit g = uFin
     where syn' :: SynExpl f (u,d) u
           syn' = explicit syn
           inh' :: InhExpl f (u,d) d
           inh' = explicit inh
+          dFin = dinit uFin
+          uFin = runST runM
           runM :: ST s u
           runM = mdo dmap <- MVec.new (_next g)
                      MVec.set dmap Nothing
-                     MVec.unsafeWrite dmap (_root g) (Just d)
+                     MVec.unsafeWrite dmap (_root g) (Just dFin)
                      umap <- MVec.new (_next g)
                      count <- newSTRef 0
                      let iter (n, t) = runDownST res  syn' inh' umap dmap n
