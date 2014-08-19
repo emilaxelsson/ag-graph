@@ -140,5 +140,81 @@ freeST res syn inh ref d umap count s = run d s where
                         return u
 
 
+runRewriteGraphST' :: forall f g d u .(Traversable f, Functor g)
+    => (d -> d -> d)         -- ^ Resolution of top-down state
+    -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
+    -> Inh' f (u,d) d  -- ^ Top-down state propagation
+    -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
+    -> (u -> d)              -- ^ Initial top-down state
+    -> Graph f
+    -> (u, Graph g)
+runRewriteGraphST' res up down rew d' g = (u, g')
+    where (u, g') = runRewriteGraphST res up down rew d g
+          d       = d' u
+
+
+runRewriteGraphST :: forall f g d u .(Traversable f, Functor g)
+    => (d -> d -> d)         -- ^ Resolution of top-down state
+    -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
+    -> Inh' f (u,d) d  -- ^ Top-down state propagation
+    -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
+    -> d                     -- ^ Initial top-down state
+    -> Graph f
+    -> (u, Graph g)
+runRewriteGraphST res syn inh rewr d g = runST runM 
+    where syn' :: SynExpl f (u,d) u
+          syn' = explicit syn
+          inh' :: InhExpl f (u,d) d
+          inh' = explicit inh
+          rewr' :: RewriteExpl f (u,d) g
+          rewr' = explicit rewr
+          runM :: ST s (u, Graph g)
+          runM = mdo dmap <- MVec.new (_next g)
+                     MVec.set dmap Nothing
+                     MVec.unsafeWrite dmap (_root g) (Just d)
+                     umap <- MVec.new (_next g)
+                     count <- newSTRef 0
+                     let iter (n, t) = do 
+                           (u,t') <- rewriteST res  syn' inh' rewr' dmap (fromJust $ dmapFin Vec.! n) 
+                                     umapFin count t
+                           MVec.unsafeWrite umap n u
+                           return (n,t')
+                     eqs' <- mapM iter (IntMap.toList $ _eqs g)
+                     dmapFin <- Vec.unsafeFreeze dmap
+                     umapFin <- Vec.unsafeFreeze umap
+                     return (umapFin Vec.! _root g, g {_eqs = IntMap.fromList eqs'})
+
+
+
+-- | Auxiliary function for 'runRewriteGraphST'.
+
+rewriteST :: forall f g u d s . (Traversable f, Functor g) => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d ->
+             RewriteExpl f (u,d) g
+       -> Vec.MVector s (Maybe d)
+     -> d -> Vec.Vector u -> STRef s Int -> Free f Node -> ST s (u, Free g Node)
+rewriteST res syn inh rewr ref d umap count s = run d s where
+    run :: d -> Free f Node -> ST s (u, Free g Node)
+    run d (Ret x) = do old <- MVec.unsafeRead ref x
+                       let new = case old of
+                                   Just o -> res o d
+                                   _      -> d
+                       MVec.unsafeWrite ref x (Just new)
+                       return (umap Vec.! x, Ret x)
+    run d (In t)  = mdo let u = syn (u,d) (fst . unNumbered) result
+                        let m = inh (u,d) (fst . unNumbered) result
+                        writeSTRef count 0
+                        let run' :: Free f Node -> ST s (Numbered ((u,d), Free g Node))
+                            run' s = do i <- readSTRef count
+                                        let j = i+1
+                                        j `seq` writeSTRef count j
+                                        let d' = lookupNumMap d i m
+                                        (u',t) <- run d' s
+                                        return (Numbered i ((u',d'), t))
+                        result <- Traversable.mapM run' t
+                        let t' = join $ fmap (snd . unNumbered) $ rewr (u,d) (fst . unNumbered) result
+                        return (u, t')
+
+
+
 termTree :: Functor f => Tree f -> Graph f
 termTree t = Simple.Graph 0 (IntMap.singleton 0 (freeTree t)) 1

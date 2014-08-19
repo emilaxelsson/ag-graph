@@ -146,6 +146,8 @@ explicit x ab be = x where ?above = ab; ?below = be
 
 type Rewrite f q g = forall a . (?below :: a -> q, ?above :: q) => f a -> Free g a
 
+type RewriteExpl f q g = forall a . q -> (a -> q) -> f a -> Free g a
+
 
 -- | Definition of a synthesized attribute.
 
