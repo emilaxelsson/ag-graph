@@ -26,6 +26,8 @@ import ProjectionSimple as Projection
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.Traversable
+import Data.Foldable (Foldable)
+import qualified Data.Foldable as Foldable
 
 
 
@@ -45,6 +47,23 @@ simpCxt = In . fmap Ret
 instance Functor f => Functor (Free f) where
     fmap f (Ret x) = Ret (f x)
     fmap f (In t) = In (fmap (fmap f) t)
+
+instance Foldable f => Foldable (Free f) where
+    foldr op c a = run a c
+        where run (Ret a) e = a `op` e
+              run (In t) e = Foldable.foldr run e t
+
+    foldl op = run
+        where run e (Ret a) = e `op` a
+              run e (In t) = Foldable.foldl run e t
+
+    fold (Ret a) = a
+    fold (In t) = Foldable.foldMap Foldable.fold t
+
+    foldMap f = run
+        where run (Ret a) = f a
+              run (In t) = Foldable.foldMap run t
+
 
 instance Functor f => Monad (Free f) where
     return = Ret

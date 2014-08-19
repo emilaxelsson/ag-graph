@@ -278,9 +278,9 @@ main = do
     -- defaultMainWith (conf "reduce_big_linearGraphFNE")     (return ()) [reduce_linearGraphBigFNE 200]
     -- defaultMainWith (conf "reduce_big_linearGraphFNEST")     (return ()) [reduce_linearGraphBigFNEST 200]
 
-    defaultMainWith (conf "repmin_overhead_expTree")     [repmin_expTree        16]
-    defaultMainWith (conf "repmin_overhead_expGraph")    [repmin_expGraph       16]
-    defaultMainWith (conf "repmin_overhead_expGraph'")   [repmin_expGraph'      12]  -- OBS only up to 12
+    -- defaultMainWith (conf "repmin_overhead_expTree")     [repmin_expTree        16]
+    -- defaultMainWith (conf "repmin_overhead_expGraph")    [repmin_expGraph       16]
+    -- defaultMainWith (conf "repmin_overhead_expGraph'")   [repmin_expGraph'      12]  -- OBS only up to 12
     defaultMainWith (conf "repmin_overhead_expGraphFST'")   [repmin_expGraphFST'      16]
     -- defaultMainWith (conf "repmin_sharing_expTree")      (return ()) [repmin_expTree        12]
     -- defaultMainWith (conf "repmin_sharing_expGraph")     (return ()) [repmin_expGraph       12]

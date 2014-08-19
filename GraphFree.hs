@@ -25,7 +25,8 @@ import Graph (Node, _root, _eqs, _next)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 
-
+import qualified Data.Foldable as Foldable
+import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 
@@ -140,7 +141,7 @@ freeST res syn inh ref d umap count s = run d s where
                         return u
 
 
-runRewriteGraphST' :: forall f g d u .(Traversable f, Functor g)
+runRewriteGraphST' :: forall f g d u .(Traversable f, Functor g, Foldable g)
     => (d -> d -> d)         -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
@@ -153,7 +154,7 @@ runRewriteGraphST' res up down rew d' g = (u, g')
           d       = d' u
 
 
-runRewriteGraphST :: forall f g d u .(Traversable f, Functor g)
+runRewriteGraphST :: forall f g d u .(Traversable f, Functor g, Foldable g)
     => (d -> d -> d)         -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
@@ -174,25 +175,31 @@ runRewriteGraphST res syn inh rewr d g = runST runM
                      MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
                      count <- newSTRef 0
-                     let iter (n, t) = do 
-                           (u,t') <- rewriteST res  syn' inh' rewr' dmap (fromJust $ dmapFin Vec.! n) 
-                                     umapFin count t
-                           MVec.unsafeWrite umap n u
-                           return (n,t')
-                     eqs' <- mapM iter (IntMap.toList $ _eqs g)
+                     eqsref <- newSTRef IntMap.empty
+                     rewriteST res  syn' inh' rewr' dmap umap dmapFin  umapFin count (_eqs g) eqsref (_root g)
                      dmapFin <- Vec.unsafeFreeze dmap
                      umapFin <- Vec.unsafeFreeze umap
-                     return (umapFin Vec.! _root g, g {_eqs = IntMap.fromList eqs'})
+                     eqs' <- readSTRef eqsref
+                     return (umapFin Vec.! _root g, g {_eqs = eqs'})
 
 
 
 -- | Auxiliary function for 'runRewriteGraphST'.
 
-rewriteST :: forall f g u d s . (Traversable f, Functor g) => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d ->
+rewriteST :: forall f g u d s . (Traversable f, Functor g, Foldable g) => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d ->
              RewriteExpl f (u,d) g
-       -> Vec.MVector s (Maybe d)
-     -> d -> Vec.Vector u -> STRef s Int -> Free f Node -> ST s (u, Free g Node)
-rewriteST res syn inh rewr ref d umap count s = run d s where
+       -> Vec.MVector s (Maybe d) -> Vec.MVector s u
+     -> Vec.Vector (Maybe d) -> Vec.Vector u -> STRef s Int -> IntMap (Free f Node)
+     -> STRef s (IntMap (Free g Node)) -> Node -> ST s ()
+rewriteST res syn inh rewr ref refu dmap umap count eqs eqsref = iter where
+    iter node = case IntMap.lookup node eqs of
+                  Nothing -> return ()
+                  Just s -> do
+                    let d = fromJust $ dmap Vec.! node
+                    (u,t) <- run d s
+                    MVec.unsafeWrite refu node u 
+                    modifySTRef eqsref (IntMap.insert node t)
+                    Foldable.mapM_ iter t
     run :: d -> Free f Node -> ST s (u, Free g Node)
     run d (Ret x) = do old <- MVec.unsafeRead ref x
                        let new = case old of
@@ -211,6 +218,7 @@ rewriteST res syn inh rewr ref d umap count s = run d s where
                                         (u',t) <- run d' s
                                         return (Numbered i ((u',d'), t))
                         result <- Traversable.mapM run' t
+
                         let t' = join $ fmap (snd . unNumbered) $ rewr (u,d) (fst . unNumbered) result
                         return (u, t')
 
