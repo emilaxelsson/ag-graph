@@ -145,14 +145,14 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
       count <- newSTRef 0
       eqsref <- newSTRef IntMap.empty
       let eqs = _eqs g
-      let iter node = case IntMap.lookup node eqs of
-                        Nothing -> return ()
-                        Just s -> do
-                          let d = fromJust $ dmapFin Vec.! node
-                          (u,t) <- run d s
-                          MVec.unsafeWrite umap node u 
-                          modifySTRef eqsref (IntMap.insert node t)
-                          Foldable.mapM_ iter t
+      let iter node = do neweqs <- readSTRef eqsref
+                         unless (IntMap.member node neweqs) $ do
+                           let s = IntMap.findWithDefault (error "runRewriteGraphST") node eqs
+                               d = fromJust $ dmapFin Vec.! node
+                           (u,t) <- run d s
+                           MVec.unsafeWrite umap node u 
+                           modifySTRef eqsref (IntMap.insert node t)
+                           Foldable.mapM_ iter t
           run :: d -> Free f Node -> ST s (u, Free g Node)
           run d (Ret x) = do 
              old <- MVec.unsafeRead dmap x
