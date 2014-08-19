@@ -106,8 +106,8 @@ linearGraphFNE n = FNE.mkGraph 0 $
 newtype Value = Value Int deriving (Eq, Ord, Show, Num, Enum)
 newtype Depth = Depth Int deriving (Eq, Ord, Show, Num, Enum)
 
-value :: (Depth :< a) => Syn IntTreeF a Value
-value (Leaf l) = Value (l+d)
+value :: (Depth :< a,Bool :< a) => Syn IntTreeF a Value
+value (Leaf l) = Value (if above then l+d else d)
   where
     Depth d = above
 value (Node a b) = max (below a) (below b)
@@ -118,28 +118,33 @@ depth (Node a b) = a |-> d & b |-> d
     d = above+1
 depth _ = o
 
+isLeft :: Inh IntTreeF a Bool
+isLeft (Node a b) = a |-> True & b |-> False
+isLeft _ = o
+
+
 reduce :: Tree IntTreeF -> Int
-reduce = fromEnum . runAG value depth 0
+reduce = fromEnum . runAG value (depth >*< isLeft) (0,False)
 
 reduceG :: Graph IntTreeF -> Int
-reduceG = fromEnum . runAGGraph max value depth 0
+reduceG = fromEnum . runAGGraph max value (depth >*< isLeft) (0,False)
 
 reduceGST :: Graph IntTreeF -> Int
-reduceGST = fromEnum . runAGGraphST max value depth 0
+reduceGST = fromEnum . runAGGraphST max value (depth >*< isLeft) (0,False)
 
 
 reduceGF :: Free.Graph IntTreeF -> Int
-reduceGF = fromEnum . Free.runAGGraph max value depth 0
+reduceGF = fromEnum . Free.runAGGraph max value (depth >*< isLeft) (0,False)
 
 reduceGFST :: Free.Graph IntTreeF -> Int
-reduceGFST = fromEnum . Free.runAGGraphST max value depth 0
+reduceGFST = fromEnum . Free.runAGGraphST max value (depth >*< isLeft) (0,False)
 
 
 reduceGFNE :: FNE.Graph IntTreeF -> Int
-reduceGFNE = fromEnum . FNE.runAGGraph max value depth 0
+reduceGFNE = fromEnum . FNE.runAGGraph max value (depth >*< isLeft) (0,False)
 
 reduceGFNEST :: FNE.Graph IntTreeF -> Int
-reduceGFNEST = fromEnum . FNE.runAGGraphST max value depth 0
+reduceGFNEST = fromEnum . FNE.runAGGraphST max value (depth >*< isLeft) (0,False)
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
