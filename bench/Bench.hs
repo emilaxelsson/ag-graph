@@ -149,37 +149,37 @@ reduceGFNEST = fromEnum . FNE.runAGGraphST max value (depth >*< isLeft) (0,False
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
 reduce_expTree n = bgroup "expTree"
-    [bench' (show n) reduce $ expTree n | n <- [4..n]]
+    [bench' (show n) reduce $ expTree n | n <- [12..n]]
   -- Grows exponentially
 
 reduce_expGraph n = bgroup "expGraph"
-    [bench' (show n) reduceG $ expGraph n | n <- [4..n]]
+    [bench' (show n) reduceG $ expGraph n | n <- [12..n]]
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
 
 reduce_expGraphST n = bgroup "expGraphST"
-    [bench' (show n) reduceGST $ expGraph n | n <- [4..n]]
+    [bench' (show n) reduceGST $ expGraph n | n <- [12..n]]
 
 reduce_expGraphF n = bgroup "expGraphF"
-    [bench' (show n) reduceGF $ expGraphF n | n <- [4..n]]
+    [bench' (show n) reduceGF $ expGraphF n | n <- [12..n]]
 
 reduce_expGraphFNE n = bgroup "expGraphFNE"
-    [bench' (show n) reduceGFNE $ expGraphFNE n | n <- [4..n]]
+    [bench' (show n) reduceGFNE $ expGraphFNE n | n <- [12..n]]
 
 
 reduce_expGraphFST n = bgroup "expGraphFST"
-    [bench' (show n) reduceGFST $ expGraphF n | n <- [4..n]]
+    [bench' (show n) reduceGFST $ expGraphF n | n <- [12..n]]
 
 reduce_expGraphFNEST n = bgroup "expGraphFNEST"
-    [bench' (show n) reduceGFNEST $ expGraphFNE n | n <- [4..n]]
+    [bench' (show n) reduceGFNEST $ expGraphFNE n | n <- [12..n]]
 
 
 reduce_linearGraph n = bgroup "linearGraph"
-    [bench' (show n) reduceG $ linearGraph n | n <- [4..n]]
+    [bench' (show n) reduceG $ linearGraph n | n <- [12..n]]
   -- Grows linearly
 
 reduce_linearGraphF n = bgroup "linearGraphF"
-    [bench' (show n) reduceGF $ linearGraphF n | n <- [4..n]]
+    [bench' (show n) reduceGF $ linearGraphF n | n <- [12..n]]
   -- Grows linearly
 
 
@@ -225,37 +225,53 @@ repminGFST' :: Free.Graph IntTreeF -> Free.Graph IntTreeF
 repminGFST' = snd . Free.runRewriteGraphST const minS minI rep' init
   where init (MinS i) = MinI i
 
+repminGFNEST' :: FNE.Graph IntTreeF -> FNE.Graph IntTreeF
+repminGFNEST' = snd . FNE.runRewriteGraphST const minS minI rep' init
+  where init (MinS i) = MinI i
+
+
 -- The results for `repmin` are quite consistent with those for `reduce`. One
 -- important difference is that `repmin` produces a tree as result, which means
 -- that simply forcing a bit result takes some time.
 
 repmin_expTree n = bgroup "expTree"
-    [bench' (show n) repmin $ expTree n | n <- [4..n]]
+    [bench' (show n) repmin $ expTree n | n <- [12..n]]
   -- Grows exponentially
 
 repmin_expGraph n = bgroup "expGraph"
-    [bench' (show n) repminG $ expGraph n | n <- [4..n]]
+    [bench' (show n) repminG $ expGraph n | n <- [12..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 5x for
   -- trees of size up to 2^16.
 
 repmin_expGraphFST' n = bgroup "expGraphFST'"
-    [bench' (show n) repminGFST' $ expGraphF n | n <- [4..n]]
+    [bench' (show n) repminGFST' $ expGraphF n | n <- [12..n]]
+
+repmin_expGraphFNEST' n = bgroup "expGraphFNEST'"
+    [bench' (show n) repminGFNEST' $ expGraphFNE n | n <- [12..n]]
+
 
 repmin_expGraph' n = bgroup "expGraph'"
-    [bench' (show n) repminG' $ expGraph n | n <- [4..n]]
+    [bench' (show n) repminG' $ expGraph n | n <- [12..n]]
   -- Grows exponentially. The overhead compared to `repmin` is about 70x for
   -- trees of size up to 2^12.
 
 repmin_linearGraph n = bgroup "linearGraph"
-    [bench' (show n) repminG $ linearGraph n | n <- [4..n]]
+    [bench' (show n) repminG $ linearGraph n | n <- [12..n]]
 
 repmin_linearGraph' n = bgroup "linearGraph'"
-    [bench' (show n) repminG' $ linearGraph n | n <- [4..n]]
+    [bench' (show n) repminG' $ linearGraph n | n <- [12..n]]
   -- Grows linearly
 
 repmin_linearGraphBig n = bgroup "linearGraphBig"
     [bench' (show n) repminG' $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `repmin`
+
+repmin_linearGraphBigFST n = bgroup "linearGraphBigFST"
+    [bench' (show n) repminGFST' $ linearGraphF n | n <- [10,20..n]]
+
+repmin_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
+    [bench' (show n) repminGFNEST' $ linearGraphFNE n | n <- [10,20..n]]
+
 
 main = do
     defaultMainWith (conf "reduce_overhead_expTree")     [reduce_expTree        16]
@@ -282,9 +298,12 @@ main = do
     defaultMainWith (conf "repmin_overhead_expGraph")    [repmin_expGraph       16]
     defaultMainWith (conf "repmin_overhead_expGraph'")   [repmin_expGraph'      12]  -- OBS only up to 12
     defaultMainWith (conf "repmin_overhead_expGraphFST'")[repmin_expGraphFST'      16]
+    defaultMainWith (conf "repmin_overhead_expGraphFNEST'")[repmin_expGraphFNEST'      16]
     defaultMainWith (conf "repmin_sharing_expTree")      [repmin_expTree        12]
     defaultMainWith (conf "repmin_sharing_expGraph")     [repmin_expGraph       12]
     defaultMainWith (conf "repmin_sharing_linearGraph")  [repmin_linearGraph    12]
     defaultMainWith (conf "repmin_sharing_linearGraph'") [repmin_linearGraph    12]
     defaultMainWith (conf "repmin_big_linearGraph")      [repmin_linearGraphBig 200]
+    defaultMainWith (conf "repmin_big_linearGraphFST")      [repmin_linearGraphBigFST 200]
+    defaultMainWith (conf "repmin_big_linearGraphFNEST")      [repmin_linearGraphBigFNEST 200]
 
