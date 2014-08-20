@@ -522,31 +522,12 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
       MVec.unsafeWrite dmap root (Just dFin)
       umap <- MVec.new next
       count <- newSTRef 0
-      nodeCount <- newSTRef 0
-      eqsref <- newSTRef IntMap.empty  -- the new graph
-      newNodes :: Vec.MVector s (Maybe Int) <- MVec.new next
-      MVec.set newNodes Nothing
-      let iter node = do 
-             mnewNode <- MVec.unsafeRead newNodes node
-             case mnewNode of
-               Just newNode -> return newNode
-               Nothing -> do
-                   let s = IntMap.findWithDefault (error "runRewriteGraphST") node eqs
-                       d = fromJust $ dmapFin Vec.! node
-                   (u,t) <- run d s
-                   MVec.unsafeWrite umap node u 
-                   newNode <- flatten t
-                   MVec.unsafeWrite newNodes node (Just newNode)
-                   return newNode
-          flatten (Ret n) = do 
-                       newNode <- iter n
-                       return newNode
-          flatten (In f) = do
-                       newNode <- readSTRef nodeCount
-                       writeSTRef nodeCount $! (newNode+1)
-                       f' <- Traversable.mapM flatten f
-                       modifySTRef eqsref (IntMap.insert newNode f')
-                       return newNode
+      allEqs <- MVec.new next
+      let iter (node,s) = do 
+             let d = fromJust $ dmapFin Vec.! node
+             (u,t) <- run d s
+             MVec.unsafeWrite umap node u 
+             MVec.unsafeWrite allEqs node t
           run :: d -> f Node -> ST s (u, Free g Node)
           run d t = mdo 
              let u = explicit syn (u,d) (fst . unNumbered) result
@@ -566,9 +547,33 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
              result <- Traversable.mapM run' t
              let t' = fmap (snd . unNumbered) $ explicit rewr (u,d) (fst . unNumbered) result
              return (u, t')
-      root' <- iter root
+      mapM_ iter $ IntMap.toList eqs
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
+      allEqsFin <- Vec.unsafeFreeze allEqs
+      nodeCount <- newSTRef 0
+      eqsref <- newSTRef IntMap.empty  -- the new graph
+      newNodes :: Vec.MVector s (Maybe Int) <- MVec.new next
+      MVec.set newNodes Nothing
+
+      let build node = do 
+             mnewNode <- MVec.unsafeRead newNodes node
+             case mnewNode of
+               Just newNode -> return newNode
+               Nothing -> do
+                   newNode <- flatten (allEqsFin Vec.! node)
+                   MVec.unsafeWrite newNodes node (Just newNode)
+                   return newNode
+          flatten (Ret n) = do 
+                       newNode <- build n
+                       return newNode
+          flatten (In f) = do
+                       newNode <- readSTRef nodeCount
+                       writeSTRef nodeCount $! (newNode+1)
+                       f' <- Traversable.mapM flatten f
+                       modifySTRef eqsref (IntMap.insert newNode f')
+                       return newNode
+      root' <- build root
       eqs' <- readSTRef eqsref
       next' <- readSTRef nodeCount
       return (umapFin Vec.! root, Graph {_eqs = eqs', _root = root', _next = next'})
