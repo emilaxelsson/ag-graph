@@ -142,17 +142,14 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
       MVec.set dmap Nothing
       MVec.unsafeWrite dmap (_root g) (Just dFin)
       umap <- MVec.new (_next g)
+      allEqs <- MVec.new (_next g)
       count <- newSTRef 0
-      eqsref <- newSTRef IntMap.empty
       let eqs = _eqs g
-      let iter node = do neweqs <- readSTRef eqsref
-                         unless (IntMap.member node neweqs) $ do
-                           let s = IntMap.findWithDefault (error "runRewriteGraphST") node eqs
-                               d = fromJust $ dmapFin Vec.! node
-                           (u,t) <- run d s
-                           MVec.unsafeWrite umap node u 
-                           modifySTRef eqsref (IntMap.insert node t)
-                           Foldable.mapM_ iter t
+      let iter (node,s) = do 
+             let d = fromJust $ dmapFin Vec.! node
+             (u,t) <- run d s
+             MVec.unsafeWrite umap node u 
+             MVec.unsafeWrite allEqs node t
           run :: d -> Free f Node -> ST s (u, Free g Node)
           run d (Ret x) = do 
              old <- MVec.unsafeRead dmap x
@@ -166,8 +163,7 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
                  m = explicit inh (u,d) (fst . unNumbered) result
                  run' :: Free f Node -> ST s (Numbered ((u,d), Free g Node))
                  run' s = do i <- readSTRef count
-                             let j = i+1
-                             j `seq` writeSTRef count j
+                             writeSTRef count $! (i+1)
                              let d' = lookupNumMap d i m
                              (u',t) <- run d' s
                              return (Numbered i ((u',d'), t))
@@ -175,10 +171,19 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
              result <- Traversable.mapM run' t
              let t' = join $ fmap (snd . unNumbered) $ explicit rewr (u,d) (fst . unNumbered) result
              return (u, t')
-      iter (_root g)
+      mapM_ iter $ IntMap.toList $ _eqs g
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
-      eqs' <- readSTRef eqsref
+      allEqsFin <- Vec.unsafeFreeze allEqs
+      newEqs <- newSTRef IntMap.empty
+      let build n = do
+             new <- readSTRef newEqs
+             unless (IntMap.member n new) $ do
+                      let t = allEqsFin Vec.! n
+                      writeSTRef newEqs (IntMap.insert n t new)
+                      Foldable.mapM_ build t
+      build (_root g)
+      eqs' <- readSTRef newEqs
       return (umapFin Vec.! _root g, g {_eqs = eqs'})
 
 
