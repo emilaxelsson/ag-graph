@@ -225,6 +225,11 @@ repminGFST' :: Free.Graph IntTreeF -> Free.Graph IntTreeF
 repminGFST' = snd . Free.runRewriteGraphST const minS minI rep' init
   where init (MinS i) = MinI i
 
+repminGST' :: Graph IntTreeF -> Graph IntTreeF
+repminGST' = snd . runRewriteGraphST const minS minI rep' init
+  where init (MinS i) = MinI i
+
+
 repminGFNEST' :: FNE.Graph IntTreeF -> FNE.Graph IntTreeF
 repminGFNEST' = snd . FNE.runRewriteGraphST const minS minI rep' init
   where init (MinS i) = MinI i
@@ -255,6 +260,9 @@ repmin_expGraph' n = bgroup "expGraph'"
   -- Grows exponentially. The overhead compared to `repmin` is about 70x for
   -- trees of size up to 2^12.
 
+repmin_expGraphST' n = bgroup "expGraphST'"
+    [bench' (show n) repminGST' $ expGraph n | n <- [12..n]]
+
 repmin_linearGraph n = bgroup "linearGraph"
     [bench' (show n) repminG $ linearGraph n | n <- [12..n]]
 
@@ -266,6 +274,10 @@ repmin_linearGraphBig n = bgroup "linearGraphBig"
     [bench' (show n) repminG' $ linearGraph n | n <- [10,20..n]]
   -- Grows linearly even for sizes that are out of reach for `repmin`
 
+repmin_linearGraphBigST n = bgroup "linearGraphBigST"
+    [bench' (show n) repminGST' $ linearGraph n | n <- [10,20..n]]
+
+
 repmin_linearGraphBigFST n = bgroup "linearGraphBigFST"
     [bench' (show n) repminGFST' $ linearGraphF n | n <- [10,20..n]]
 
@@ -274,36 +286,38 @@ repmin_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
 
 
 main = do
-    defaultMainWith (conf "reduce_overhead_expTree")     [reduce_expTree        16]
-    defaultMainWith (conf "reduce_overhead_expGraph")    [reduce_expGraph       16]
-    defaultMainWith (conf "reduce_overhead_expGraphST")     [reduce_expGraphST       16]
-    defaultMainWith (conf "reduce_overhead_expGraphF")   [reduce_expGraphF      16]
-    defaultMainWith (conf "reduce_overhead_expGraphFST")   [reduce_expGraphFST      16]
-    defaultMainWith (conf "reduce_overhead_expGraphFNE")   [reduce_expGraphFNE      16]
-    defaultMainWith (conf "reduce_overhead_expGraphFNEST")   [reduce_expGraphFNEST      16]
-    defaultMainWith (conf "reduce_sharing_expTree")      [reduce_expTree        12]
-    defaultMainWith (conf "reduce_sharing_expGraph")     [reduce_expGraph       12]
-    defaultMainWith (conf "reduce_sharing_expGraphST")     [reduce_expGraphST       12]
-    defaultMainWith (conf "reduce_sharing_expGraphF")    [reduce_expGraphF      12]
-    defaultMainWith (conf "reduce_sharing_linearGraph")  [reduce_linearGraph    12]
-    defaultMainWith (conf "reduce_sharing_linearGraphF") [reduce_linearGraphF   12]
-    defaultMainWith (conf "reduce_big_linearGraph")      [reduce_linearGraphBig 200]
-    defaultMainWith (conf "reduce_big_linearGraphST")      [reduce_linearGraphBigST 200]
-    defaultMainWith (conf "reduce_big_linearGraphF")     [reduce_linearGraphBigF 200]
-    defaultMainWith (conf "reduce_big_linearGraphFST")     [reduce_linearGraphBigFST 200]
-    defaultMainWith (conf "reduce_big_linearGraphFNE")     [reduce_linearGraphBigFNE 200]
-    defaultMainWith (conf "reduce_big_linearGraphFNEST")     [reduce_linearGraphBigFNEST 200]
+    defaultMainWith (conf "reduce_overhead_expTree")        [reduce_expTree             16]
+    defaultMainWith (conf "reduce_overhead_expGraph")       [reduce_expGraph            16]
+    defaultMainWith (conf "reduce_overhead_expGraphST")     [reduce_expGraphST          16]
+    defaultMainWith (conf "reduce_overhead_expGraphF")      [reduce_expGraphF           16]
+    defaultMainWith (conf "reduce_overhead_expGraphFST")    [reduce_expGraphFST         16]
+    defaultMainWith (conf "reduce_overhead_expGraphFNE")    [reduce_expGraphFNE         16]
+    defaultMainWith (conf "reduce_overhead_expGraphFNEST")  [reduce_expGraphFNEST       16]
+    defaultMainWith (conf "reduce_sharing_expTree")         [reduce_expTree             12]
+    defaultMainWith (conf "reduce_sharing_expGraph")        [reduce_expGraph            12]
+    defaultMainWith (conf "reduce_sharing_expGraphST")      [reduce_expGraphST          12]
+    defaultMainWith (conf "reduce_sharing_expGraphF")       [reduce_expGraphF           12]
+    defaultMainWith (conf "reduce_sharing_linearGraph")     [reduce_linearGraph         12]
+    defaultMainWith (conf "reduce_sharing_linearGraphF")    [reduce_linearGraphF        12]
+    defaultMainWith (conf "reduce_big_linearGraph")         [reduce_linearGraphBig      200]
+    defaultMainWith (conf "reduce_big_linearGraphST")       [reduce_linearGraphBigST    200]
+    defaultMainWith (conf "reduce_big_linearGraphF")        [reduce_linearGraphBigF     200]
+    defaultMainWith (conf "reduce_big_linearGraphFST")      [reduce_linearGraphBigFST   200]
+    defaultMainWith (conf "reduce_big_linearGraphFNE")      [reduce_linearGraphBigFNE   200]
+    defaultMainWith (conf "reduce_big_linearGraphFNEST")    [reduce_linearGraphBigFNEST 200]
 
-    defaultMainWith (conf "repmin_overhead_expTree")     [repmin_expTree        16]
-    defaultMainWith (conf "repmin_overhead_expGraph")    [repmin_expGraph       16]
-    defaultMainWith (conf "repmin_overhead_expGraph'")   [repmin_expGraph'      12]  -- OBS only up to 12
-    defaultMainWith (conf "repmin_overhead_expGraphFST'")[repmin_expGraphFST'      16]
-    defaultMainWith (conf "repmin_overhead_expGraphFNEST'")[repmin_expGraphFNEST'      16]
-    defaultMainWith (conf "repmin_sharing_expTree")      [repmin_expTree        12]
-    defaultMainWith (conf "repmin_sharing_expGraph")     [repmin_expGraph       12]
-    defaultMainWith (conf "repmin_sharing_linearGraph")  [repmin_linearGraph    12]
-    defaultMainWith (conf "repmin_sharing_linearGraph'") [repmin_linearGraph    12]
-    defaultMainWith (conf "repmin_big_linearGraph")      [repmin_linearGraphBig 200]
-    defaultMainWith (conf "repmin_big_linearGraphFST")      [repmin_linearGraphBigFST 200]
-    defaultMainWith (conf "repmin_big_linearGraphFNEST")      [repmin_linearGraphBigFNEST 200]
+    defaultMainWith (conf "repmin_overhead_expTree")        [repmin_expTree             16]
+    defaultMainWith (conf "repmin_overhead_expGraph")       [repmin_expGraph            16]
+    defaultMainWith (conf "repmin_overhead_expGraph'")      [repmin_expGraph'           12]  -- OBS only up to 12
+    defaultMainWith (conf "repmin_overhead_expGraphST'")    [repmin_expGraphST'         16]
+    defaultMainWith (conf "repmin_overhead_expGraphFST'")   [repmin_expGraphFST'        16]
+    defaultMainWith (conf "repmin_overhead_expGraphFNEST'") [repmin_expGraphFNEST'      16]
+    defaultMainWith (conf "repmin_sharing_expTree")         [repmin_expTree             12]
+    defaultMainWith (conf "repmin_sharing_expGraph")        [repmin_expGraph            12]
+    defaultMainWith (conf "repmin_sharing_linearGraph")     [repmin_linearGraph         12]
+    defaultMainWith (conf "repmin_sharing_linearGraph'")    [repmin_linearGraph         12]
+    defaultMainWith (conf "repmin_big_linearGraph")         [repmin_linearGraphBig      200]
+    defaultMainWith (conf "repmin_big_linearGraphST")       [repmin_linearGraphBigST    200]
+    defaultMainWith (conf "repmin_big_linearGraphFST")      [repmin_linearGraphBigFST   200]
+    defaultMainWith (conf "repmin_big_linearGraphFNEST")    [repmin_linearGraphBigFNEST 200]
 
