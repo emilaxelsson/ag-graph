@@ -152,46 +152,48 @@ runRewriteGraphST :: forall f g d u .(Traversable f, Traversable g)
     -> (u -> d)            -- ^ Initial top-down state
     -> Graph f
     -> (u, Graph g)
-runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
-    (uFin,gFin) = runST runM
+runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} = result where
+    result@(uFin,_) = runST runM
     dFin = dinit uFin
     runM :: forall s . ST s (u, Graph g)
     runM = mdo
-      dmap <- MVec.new (_next g)
+      dmap <- MVec.new next
       MVec.set dmap Nothing
-      MVec.unsafeWrite dmap (_root g) (Just dFin)
-      umap <- MVec.new (_next g)
+      MVec.unsafeWrite dmap root (Just dFin)
+      umap <- MVec.new next
       count <- newSTRef 0
+      nodeCount <- newSTRef 0
       eqsref <- newSTRef IntMap.empty  -- the new graph
-      fastref <- newSTRef IntMap.empty -- shortcuts
-      let eqs = _eqs g
-      let iter node = do neweqs <- readSTRef eqsref
-                         if (IntMap.member node neweqs) then return node
-                         else do fast <- readSTRef fastref
-                                 case IntMap.lookup node fast of
-                                   Just n -> return n
-                                   Nothing -> do
-                                     let s = IntMap.findWithDefault (error "runRewriteGraphST") node eqs
-                                         d = fromJust $ dmapFin Vec.! node
-                                     (u,t) <- run d s
-                                     case t of 
-                                       Ret n -> do 
-                                         n' <- iter n
-                                         modifySTRef fastref (IntMap.insert node n')
-                                         return n'
-                                       In f -> do 
-                                         Traversable.mapM (Traversable.mapM iter) f
-                                         MVec.unsafeWrite umap node u 
-                                         modifySTRef eqsref (IntMap.insert node f)
-                                         return node
+      newNodes :: Vec.MVector s (Maybe Int) <- MVec.new next
+      MVec.set newNodes Nothing
+      let iter node = do 
+             mnewNode <- MVec.unsafeRead newNodes node
+             case mnewNode of
+               Just newNode -> return newNode
+               Nothing -> do
+                   let s = IntMap.findWithDefault (error "runRewriteGraphST") node eqs
+                       d = fromJust $ dmapFin Vec.! node
+                   (u,t) <- run d s
+                   MVec.unsafeWrite umap node u 
+                   case t of 
+                     Ret n -> do 
+                       newNode <- iter n
+                       MVec.unsafeWrite newNodes node (Just newNode)
+                       return newNode
+                     In f -> do 
+                       newNode <- readSTRef nodeCount
+                       writeSTRef nodeCount $! (newNode+1)
+                       MVec.unsafeWrite newNodes node (Just newNode)
+                       f' <- Traversable.mapM (Traversable.mapM iter) f
+                       modifySTRef eqsref (IntMap.insert newNode f')
+                       return newNode
           run :: d -> f (Free f Node) -> ST s (u, Free g Node)
           run d t = mdo 
              let u = explicit syn (u,d) (fst . unNumbered) result
                  m = explicit inh (u,d) (fst . unNumbered) result
                  run' :: Free f Node -> ST s (Numbered ((u,d), Free g Node))
                  run' s = do i <- readSTRef count
-                             let j = i+1
-                             j `seq` writeSTRef count j
+                             writeSTRef count $! (i+1)
                              let d' = lookupNumMap d i m
                              (u',t) <- runF d' s
                              return (Numbered i ((u',d'), t))
@@ -207,11 +209,12 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
                          _      -> d
              MVec.unsafeWrite dmap x (Just new)
              return (umapFin Vec.! x, Ret x)
-      iter (_root g)
+      root' <- iter root
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
       eqs' <- readSTRef eqsref
-      return (umapFin Vec.! _root g, g {_eqs = eqs'})
+      next' <- readSTRef nodeCount
+      return (umapFin Vec.! root, Graph {_eqs = eqs', _root = root', _next = next'})
 
 
 termTree :: Functor f => Tree f -> Graph f
