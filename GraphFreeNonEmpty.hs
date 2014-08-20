@@ -34,13 +34,13 @@ import Data.Maybe
 
 import AG
 
-data Graph f = Graph { _root :: Node
+data Graph f = Graph { _root :: f (Free f Node)
                      , _eqs :: IntMap (f (Free f Node))
                      , _next :: Node }
 
 -- | Construct a graph
-mkGraph :: Node -> [(Node, f (Free f Node))] -> Graph f
-mkGraph r es = Graph r (IntMap.fromList es) (maximum (map fst es) + 1)
+mkGraph :: f (Free f Node) -> [(Node, f (Free f Node))] -> Graph f
+mkGraph r es = Graph r (IntMap.fromList es) (if null es then 0 else maximum (map fst es) + 1)
 
 
 -- | This function runs an AG on a graph.
@@ -51,14 +51,15 @@ runAGGraph :: forall f d u .Traversable f
     -> d                     -- ^ Initial top-down state
     -> Graph f
     -> u
-runAGGraph res syn inh d g = umap IntMap.! _root g
+runAGGraph res syn inh d g = u
     where syn' :: SynExpl f (u,d) u
           syn' = explicit syn
           inh' :: InhExpl f (u,d) d
           inh' = explicit inh
           run = free res  syn' inh'
+          (u,dmapRoot) = run d umap (_root g)
           dmap = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2) 
-                 (IntMap.singleton (_root g) d) result
+                 dmapRoot result
           umap = IntMap.map fst result
           result = IntMap.mapWithKey (\ n t -> run (dmap IntMap.! n) umap t) (_eqs g)
 
@@ -102,16 +103,16 @@ runAGGraphST res syn inh d g = runST runM
           runM :: ST s u
           runM = mdo dmap <- MVec.new (_next g)
                      MVec.set dmap Nothing
-                     MVec.unsafeWrite dmap (_root g) (Just d)
                      umap <- MVec.new (_next g)
                      count <- newSTRef 0
                      let iter (n, t) = do 
                            u <- freeST res  syn' inh' dmap (fromJust $ dmapFin Vec.! n) umapFin count t   
                            MVec.unsafeWrite umap n u
+                     u <- freeST res  syn' inh' dmap d umapFin count (_root g)
                      mapM_ iter (IntMap.toList $ _eqs g)
                      dmapFin <- Vec.unsafeFreeze dmap
                      umapFin <- Vec.unsafeFreeze umap
-                     return (umapFin Vec.! _root g)
+                     return u
 
 
 
@@ -159,7 +160,6 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
     runM = mdo
       dmap <- MVec.new next
       MVec.set dmap Nothing
-      MVec.unsafeWrite dmap root (Just dFin)
       umap <- MVec.new next
       count <- newSTRef 0
       allEqs <- MVec.new next
@@ -190,6 +190,7 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
                          _      -> d
              MVec.unsafeWrite dmap x (Just new)
              return (umapFin Vec.! x, Ret x)
+      (u,interRoot) <- run dFin root
       mapM_ iter $ IntMap.toList eqs
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
@@ -215,11 +216,16 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
                        f' <- Traversable.mapM (Traversable.mapM build) f
                        modifySTRef eqsref (IntMap.insert newNode f')
                        return newNode
-      root' <- build root
+          build' (Ret n) = do
+                         n' <- build n
+                         e <- readSTRef eqsref
+                         return (e IntMap.! n')
+          build' (In f) = Traversable.mapM (Traversable.mapM build) f
+      root' <- build' interRoot
       eqs' <- readSTRef eqsref
       next' <- readSTRef nodeCount
-      return (umapFin Vec.! root, Graph {_eqs = eqs', _root = root', _next = next'})
+      return (u, Graph {_eqs = eqs', _root = root', _next = next'})
 
 
 termTree :: Functor f => Tree f -> Graph f
-termTree (In t) = Graph 0 (IntMap.singleton 0 (fmap freeTree t)) 1
+termTree (In t) = Graph (fmap freeTree t) (IntMap.empty) 0
