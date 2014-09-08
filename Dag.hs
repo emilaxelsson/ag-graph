@@ -173,6 +173,19 @@ runAGDagST :: forall f d u .Traversable f
     -> (u -> d)        -- ^ initialisation of inherited attributes
     -> Dag f           -- ^ input dag
     -> u
+runAGDagST _ syn inh dinit Dag {root = t,nodeCount=0} = uFin where
+    dFin = dinit uFin
+    uFin = run dFin t 
+    run d t = u where
+        t' = fmap bel $ number t
+        bel (Numbered i s) =
+            let d' = lookupNumMap d i m
+            in Numbered i (run' d' s, d')
+        m = explicit inh (u,d) unNumbered t'
+        u = explicit syn (u,d) unNumbered t'
+    run' _ (Ret _) = error "runAGDagST: the input dag has no edges!"
+    run' d (In t) = run d t
+
 runAGDagST res syn inh dinit Dag {edges,root,nodeCount} = uFin where
     uFin = runST runM
     dFin = dinit uFin
@@ -240,6 +253,23 @@ runRewriteDagST :: forall f g d u .(Traversable f, Traversable g)
     -> (u -> d)            -- ^ input term
     -> Dag f
     -> (u, Dag g)
+runRewriteDagST _ syn inh rewr dinit Dag {root=t,nodeCount=0} 
+             = (uFin,Dag{root= norm res, edges=IntMap.empty,nodeCount=0}) where
+    dFin = dinit uFin
+    (uFin,res) = run dFin t
+    norm (In t) = t
+    norm (Ret _) =  error "runRewriteDagST: the input dag has no edges!"
+    run' _ (Ret _) = error "runRewriteDagST: the input dag has no edges!"
+    run' d (In t) = run d t
+    run d t = (u,t'') where
+        t' = fmap bel $ number t
+        bel (Numbered i s) =
+            let d' = lookupNumMap d i m
+                (u', s') = run' d' s
+            in Numbered i ((u', d'),s')
+        m = explicit inh (u,d) (fst . unNumbered) t'
+        u = explicit syn (u,d) (fst . unNumbered) t'
+        t'' = join $ fmap (snd . unNumbered) $ explicit rewr (u,d) (fst . unNumbered) t'
 runRewriteDagST res syn inh rewr dinit Dag {edges,root,nodeCount} = result where
     result@(uFin,_) = runST runM
     dFin = dinit uFin
