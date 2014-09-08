@@ -10,12 +10,14 @@ module Paper where
 
 
 
-import Data.Foldable (Foldable)
+import Data.Foldable (Foldable (..))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Traversable (Traversable)
+import Data.Traversable (Traversable (..))
+import Control.Monad
+import Control.Applicative
 import System.IO.Unsafe
 
 
@@ -53,7 +55,23 @@ leavesBelow d (Node' t1 t2)  =
     leavesBelow (d-1) t1 `Set.union` leavesBelow (d-1) t2
 
 data IntTreeF a = Leaf Int | Node a a
-  deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving (Eq, Show)
+
+instance Foldable IntTreeF where
+    foldr _ z (Leaf _) = z
+    foldr f z (Node x y) = x `f` (y `f` z)
+
+instance Functor IntTreeF where
+    fmap _ (Leaf i) = Leaf i
+    fmap f (Node x y) = Node (f x) (f y)
+
+instance Traversable IntTreeF where
+    mapM _ (Leaf i) = return (Leaf i)
+    mapM f (Node x y) = liftM2 Node (f x) (f y)
+
+    traverse _ (Leaf i) = pure (Leaf i)
+    traverse f (Node x y) = liftA2 Node (f x) (f y)
+
 
 leavesBelowI :: Inh IntTreeF atts Int
 leavesBelowI (Leaf i)      = o
