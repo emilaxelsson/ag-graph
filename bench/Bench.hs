@@ -147,10 +147,8 @@ reduce_expTree n = bgroup "expTree"
     [bench' (show n) reduce $ expTree n | n <- [12..n]]
   -- Grows exponentially
 
-reduce_expSimple n = bgroup "expDag"
+reduce_expSimple n = bgroup "expSimple"
     [bench' (show n) reduceGS $ expSimple n | n <- [12..n]]
-  -- Grows exponentially. The overhead compared to `reduce` is about 6x for
-  -- trees of size up to 2^16.
 
 reduce_expSimpleST n = bgroup "expSimpleST"
     [bench' (show n) reduceGSST $ expSimple n | n <- [12..n]]
