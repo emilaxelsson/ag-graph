@@ -14,9 +14,9 @@ import Criterion.Types
 import Control.DeepSeq
 
 import AG
-import Graph
-import qualified GraphFree as Free
-import qualified GraphFreeNonEmpty as FNE
+import qualified DagSimple as Simple
+import qualified DagFree as Free
+import qualified Dag as Dag
 import Paper
 
 
@@ -44,13 +44,13 @@ instance NFDataF f => NFDataF (Free f)
     rnfF (Ret x) = rnf x `seq` ()
 
 
-instance NFDataF f => NFData (Graph f)
+instance NFDataF f => NFData (Simple.Dag f)
   where
-    rnf (Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
+    rnf (Simple.Dag r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
-instance NFDataF f => NFData (FNE.Graph f)
+instance NFDataF f => NFData (Dag.Dag f)
   where
-    rnf (FNE.Graph r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
+    rnf (Dag.Dag r es n) = rnfF r `seq` rnf n `seq` rnf (fmap rnfF es)
 
 
 instance NFDataF IntTreeF
@@ -62,26 +62,26 @@ expTree :: Int -> Tree IntTreeF
 expTree 1 = In $ Leaf 10
 expTree n = In $ Node (expTree (n-1)) (expTree (n-1))
 
-expGraph :: Int -> Graph IntTreeF
-expGraph = termTree . expTree
+expSimple :: Int -> Simple.Dag IntTreeF
+expSimple = Simple.termTree . expTree
 
-expGraphF :: Int -> Free.Graph IntTreeF
-expGraphF = Free.termTree . expTree
+expFree :: Int -> Free.Dag IntTreeF
+expFree = Free.termTree . expTree
 
-expGraphFNE :: Int -> FNE.Graph IntTreeF
-expGraphFNE = FNE.termTree . expTree
+expDag :: Int -> Dag.Dag IntTreeF
+expDag = Dag.termTree . expTree
 
-linearGraph :: Int -> Graph IntTreeF
-linearGraph n = mkGraph 0 $
+linearSimple :: Int -> Simple.Dag IntTreeF
+linearSimple n = Simple.mkDag 0 $
     [(k, Node (k+1) (k+1)) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
-linearGraphF :: Int -> Free.Graph IntTreeF
-linearGraphF n = mkGraph 0 $
+linearFree :: Int -> Free.Dag IntTreeF
+linearFree n = Simple.mkDag 0 $
     [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
 
-linearGraphFNE :: Int -> FNE.Graph IntTreeF
-linearGraphFNE n = FNE.mkGraph 0 $
-    [(k, Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
+linearDag :: Int -> Dag.Dag IntTreeF
+linearDag n = Dag.mkDag (Node (Ret 0) (Ret 0))  $
+    [(k, Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-3] ] ++ [(n-2, Leaf 10)]
 
 
 
@@ -94,11 +94,11 @@ linearGraphFNE n = FNE.mkGraph 0 $
 -- attributes and simple semantic functions. This is to make be able to test the
 -- efficiency of the run functions themselves.
 --
--- The benchmark is run with different AG implementations and graph
--- representations. The suffix "F" indicates that the graph
--- representation from "GraphFree" is used. The suffix "ST" indicates
+-- The benchmark is run with different AG implementations and dag
+-- representations. The suffix "F" indicates that the dag
+-- representation from "DagFree" is used. The suffix "ST" indicates
 -- that the mutable vector implementation is used. The suffix "FNE"
--- indicates that the graph representation from "GraphFreeNonEmpty" is
+-- indicates that the dag representation from "DagFreeNonEmpty" is
 -- used. The benchmarks mentioned in the paper use the mutable vector
 -- implementation.
 
@@ -106,8 +106,8 @@ linearGraphFNE n = FNE.mkGraph 0 $
 newtype Value = Value Int deriving (Eq, Ord, Show, Num, Enum)
 newtype Depth = Depth Int deriving (Eq, Ord, Show, Num, Enum)
 
-value :: (Depth :< a,Bool :< a) => Syn IntTreeF a Value
-value (Leaf l) = Value (if above then l+d else d)
+value :: (Depth :< a) => Syn IntTreeF a Value
+value (Leaf l) = Value (l+d)
   where
     Depth d = above
 value (Node a b) = max (below a) (below b)
@@ -118,33 +118,28 @@ depth (Node a b) = a |-> d & b |-> d
     d = above+1
 depth _ = o
 
-isLeft :: Inh IntTreeF a Bool
-isLeft (Node a b) = a |-> True & b |-> False
-isLeft _ = o
-
-
 reduce :: Tree IntTreeF -> Int
-reduce = fromEnum . runAG value (depth >*< isLeft) (const (0,False))
+reduce = fromEnum . runAG value depth (const 0)
 
-reduceG :: Graph IntTreeF -> Int
-reduceG = fromEnum . runAGGraph max value (depth >*< isLeft) (const (0,False))
+reduceGS :: Simple.Dag IntTreeF -> Int
+reduceGS = fromEnum . Simple.runAGDag max value depth (const 0)
 
-reduceGST :: Graph IntTreeF -> Int
-reduceGST = fromEnum . runAGGraphST max value (depth >*< isLeft) (const (0,False))
-
-
-reduceGF :: Free.Graph IntTreeF -> Int
-reduceGF = fromEnum . Free.runAGGraph max value (depth >*< isLeft) (const (0,False))
-
-reduceGFST :: Free.Graph IntTreeF -> Int
-reduceGFST = fromEnum . Free.runAGGraphST max value (depth >*< isLeft) (const (0,False))
+reduceGSST :: Simple.Dag IntTreeF -> Int
+reduceGSST = fromEnum . Simple.runAGDagST max value depth (const 0)
 
 
-reduceGFNE :: FNE.Graph IntTreeF -> Int
-reduceGFNE = fromEnum . FNE.runAGGraph max value (depth >*< isLeft) (0,False)
+reduceGF :: Free.Dag IntTreeF -> Int
+reduceGF = fromEnum . Free.runAGDag max value depth (const 0)
 
-reduceGFNEST :: FNE.Graph IntTreeF -> Int
-reduceGFNEST = fromEnum . FNE.runAGGraphST max value (depth >*< isLeft) (0,False)
+reduceGFST :: Free.Dag IntTreeF -> Int
+reduceGFST = fromEnum . Free.runAGDagST max value depth (const 0)
+
+
+reduceG :: Dag.Dag IntTreeF -> Int
+reduceG = fromEnum . Dag.runAGDag max value depth (const 0)
+
+reduceGST :: Dag.Dag IntTreeF -> Int
+reduceGST = fromEnum . Dag.runAGDagST max value depth (const 0)
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
@@ -152,60 +147,77 @@ reduce_expTree n = bgroup "expTree"
     [bench' (show n) reduce $ expTree n | n <- [12..n]]
   -- Grows exponentially
 
-reduce_expGraph n = bgroup "expGraph"
-    [bench' (show n) reduceG $ expGraph n | n <- [12..n]]
+reduce_expSimple n = bgroup "expDag"
+    [bench' (show n) reduceGS $ expSimple n | n <- [12..n]]
   -- Grows exponentially. The overhead compared to `reduce` is about 6x for
   -- trees of size up to 2^16.
 
-reduce_expGraphST n = bgroup "expGraphST"
-    [bench' (show n) reduceGST $ expGraph n | n <- [12..n]]
+reduce_expSimpleST n = bgroup "expSimpleST"
+    [bench' (show n) reduceGSST $ expSimple n | n <- [12..n]]
 
-reduce_expGraphF n = bgroup "expGraphF"
-    [bench' (show n) reduceGF $ expGraphF n | n <- [12..n]]
+reduce_expFree n = bgroup "expFree"
+    [bench' (show n) reduceGF $ expFree n | n <- [12..n]]
 
-reduce_expGraphFNE n = bgroup "expGraphFNE"
-    [bench' (show n) reduceGFNE $ expGraphFNE n | n <- [12..n]]
-
-
-reduce_expGraphFST n = bgroup "expGraphFST"
-    [bench' (show n) reduceGFST $ expGraphF n | n <- [12..n]]
-
-reduce_expGraphFNEST n = bgroup "expGraphFNEST"
-    [bench' (show n) reduceGFNEST $ expGraphFNE n | n <- [12..n]]
+reduce_expDag n = bgroup "expDag"
+    [bench' (show n) reduceG $ expDag n | n <- [12..n]]
 
 
-reduce_linearGraph n = bgroup "linearGraph"
-    [bench' (show n) reduceG $ linearGraph n | n <- [12..n]]
+reduce_expFreeST n = bgroup "expFreeST"
+    [bench' (show n) reduceGFST $ expFree n | n <- [12..n]]
+
+reduce_expDagST n = bgroup "expDagST"
+    [bench' (show n) reduceGST $ expDag n | n <- [12..n]]
+
+
+reduce_linearSimple n = bgroup "linearSimple"
+    [bench' (show n) reduceGS $ linearSimple n | n <- [12..n]]
   -- Grows linearly
 
-reduce_linearGraphF n = bgroup "linearGraphF"
-    [bench' (show n) reduceGF $ linearGraphF n | n <- [12..n]]
+reduce_linearSimpleST n = bgroup "linearSimpleST"
+    [bench' (show n) reduceGSST $ linearSimple n | n <- [12..n]]
   -- Grows linearly
 
 
-reduce_linearGraphBig n = bgroup "linearGraphBig"
-    [bench' (show n) reduceG $ linearGraph n | n <- [100,200..n]]
+reduce_linearFree n = bgroup "linearFree"
+    [bench' (show n) reduceGF $ linearFree n | n <- [12..n]]
+  -- Grows linearly
+
+reduce_linearFreeST n = bgroup "linearFreeST"
+    [bench' (show n) reduceGFST $ linearFree n | n <- [12..n]]
+  -- Grows linearly
+
+reduce_linearDag n = bgroup "linearDag"
+    [bench' (show n) reduceG $ linearDag n | n <- [12..n]]
+  -- Grows linearly
+
+reduce_linearDagST n = bgroup "linearDagST"
+    [bench' (show n) reduceGST $ linearDag n | n <- [12..n]]
+  -- Grows linearly
+
+
+reduce_linearDagBigS n = bgroup "linearDagBigS"
+    [bench' (show n) reduceGS $ linearSimple n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-reduce_linearGraphBigST n = bgroup "linearGraphBigST"
-    [bench' (show n) reduceGST $ linearGraph n | n <- [100,200..n]]
+reduce_linearDagBigSST n = bgroup "linearDagBigSST"
+    [bench' (show n) reduceGSST $ linearSimple n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
-reduce_linearGraphBigF n = bgroup "linearGraphBigF"
-    [bench' (show n) reduceGF $ linearGraphF n | n <- [100,200..n]]
+reduce_linearFreeBig n = bgroup "linearFreeBig"
+    [bench' (show n) reduceGF $ linearFree n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-reduce_linearGraphBigFST n = bgroup "linearGraphBigFST"
-    [bench' (show n) reduceGFST $ linearGraphF n | n <- [100,200..n]]
+reduce_linearFreeBigST n = bgroup "linearFreeBigST"
+    [bench' (show n) reduceGFST $ linearFree n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-reduce_linearGraphBigFNE n = bgroup "linearGraphBigFNE"
-    [bench' (show n) reduceGF $ linearGraphF n | n <- [100,200..n]]
+reduce_linearDagBig n = bgroup "linearDagBig"
+    [bench' (show n) reduceGF $ linearFree n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
-reduce_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
-    [bench' (show n) reduceGFNEST $ linearGraphFNE n | n <- [100,200..n]]
+reduce_linearDagBigST n = bgroup "linearDagBigST"
+    [bench' (show n) reduceGST $ linearDag n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
@@ -221,17 +233,22 @@ conf name = defaultConfig
 -- * Repmin
 --------------------------------------------------------------------------------
 
-repminGFST' :: Free.Graph IntTreeF -> Free.Graph IntTreeF
-repminGFST' = snd . Free.runRewriteGraphST const minS minI rep' init
-  where init (MinS i) = MinI i
-
-repminGST' :: Graph IntTreeF -> Graph IntTreeF
-repminGST' = snd . runRewriteGraphST const minS minI rep' init
+repminFreeST :: Free.Dag IntTreeF -> Free.Dag IntTreeF
+repminFreeST = snd . Free.runRewriteDagST const minS minI rep' init
   where init (MinS i) = MinI i
 
 
-repminGFNEST' :: FNE.Graph IntTreeF -> FNE.Graph IntTreeF
-repminGFNEST' = snd . FNE.runRewriteGraphST const minS minI rep' init
+repminSimpleST :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminSimpleST = snd . Simple.runRewriteDagST const minS minI rep' init
+  where init (MinS i) = MinI i
+
+repminSimple :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminSimple = snd . Simple.runRewriteDag const minS minI rep' init
+  where init (MinS i) = MinI i
+
+
+repminGST :: Dag.Dag IntTreeF -> Dag.Dag IntTreeF
+repminGST = snd . Dag.runRewriteDagST const minS minI rep' init
   where init (MinS i) = MinI i
 
 
@@ -243,156 +260,87 @@ repmin_expTree n = bgroup "expTree"
     [bench' (show n) repmin $ expTree n | n <- [12..n]]
   -- Grows exponentially
 
-repmin_expGraph n = bgroup "expGraph"
-    [bench' (show n) repminG $ expGraph n | n <- [12..n]]
-  -- Grows exponentially. The overhead compared to `repmin` is about 5x for
-  -- trees of size up to 2^16.
 
-repmin_expGraphFST' n = bgroup "expGraphFST'"
-    [bench' (show n) repminGFST' $ expGraphF n | n <- [12..n]]
+repmin_expFreeST n = bgroup "expFreeST"
+    [bench' (show n) repminFreeST $ expFree n | n <- [12..n]]
 
-repmin_expGraphFNEST' n = bgroup "expGraphFNEST'"
-    [bench' (show n) repminGFNEST' $ expGraphFNE n | n <- [12..n]]
+repmin_expDagST n = bgroup "expDagST"
+    [bench' (show n) repminGST $ expDag n | n <- [12..n]]
 
+repmin_expSimple n = bgroup "expSimple"
+    [bench' (show n) repminSimple $ expSimple n | n <- [12..n]]
 
-repmin_expGraph' n = bgroup "expGraph'"
-    [bench' (show n) repminG' $ expGraph n | n <- [12..n]]
-  -- Grows exponentially. The overhead compared to `repmin` is about 70x for
-  -- trees of size up to 2^12.
-
-repmin_expGraphST' n = bgroup "expGraphST'"
-    [bench' (show n) repminGST' $ expGraph n | n <- [12..n]]
-
-repmin_linearGraph n = bgroup "linearGraph"
-    [bench' (show n) repminG $ linearGraph n | n <- [12..n]]
-
-repmin_linearGraph' n = bgroup "linearGraph'"
-    [bench' (show n) repminG' $ linearGraph n | n <- [12..n]]
-  -- Grows linearly
-
-repmin_linearGraphBig n = bgroup "linearGraphBig"
-    [bench' (show n) repminG' $ linearGraph n | n <- [100,200..n]]
-  -- Grows linearly even for sizes that are out of reach for `repmin`
-
-repmin_linearGraphBigST n = bgroup "linearGraphBigST"
-    [bench' (show n) repminGST' $ linearGraph n | n <- [100,200..n]]
+repmin_expSimpleST n = bgroup "expSimpleST"
+    [bench' (show n) repminSimpleST $ expSimple n | n <- [12..n]]
 
 
-repmin_linearGraphBigFST n = bgroup "linearGraphBigFST"
-    [bench' (show n) repminGFST' $ linearGraphF n | n <- [100,200..n]]
-
-repmin_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
-    [bench' (show n) repminGFNEST' $ linearGraphFNE n | n <- [100,200..n]]
+repmin_linearSimple n = bgroup "linearSimple"
+    [bench' (show n) repminSimple $ linearSimple n | n <- [12..n]]
 
 
--------------------------------------------------
--- * Reptrans
--------------------------------------------------
-
-trans ::  (MinI :< atts, Bool :< atts) => Syn IntTreeF atts (Tree IntTreeF)
-trans (Leaf i)   =  In (Leaf globMin)
-trans (Node a b) | above     = In (Node (below a) (below b))
-                 | otherwise = In (Node (below a) (In (Node (below a) (below a))))
+repmin_linearSimpleST n = bgroup "linearSimpleST"
+    [bench' (show n) repminSimpleST $ linearSimple n | n <- [12..n]]
 
 
-trans' ::  (MinI :< atts, Bool :< atts) => Rewrite IntTreeF atts IntTreeF
-trans' (Leaf i)    =  In (Leaf globMin)
-trans' (Node a b) | above     = In (Node (Ret a) (Ret b))
-                  | otherwise = In (Node (Ret b) (Ret a))
+repmin_linearFreeST n = bgroup "linearFreeST"
+    [bench' (show n) repminFreeST $ linearFree n | n <- [12..n]]
+
+repmin_linearDagST n = bgroup "linearDagST"
+    [bench' (show n) repminGST $ linearDag n | n <- [12..n]]
 
 
-reptrans :: Tree IntTreeF -> Tree IntTreeF
-reptrans = snd . runAG (minS |*| rep) (minI >*< isLeft) init
-  where init (MinS i,_) = (MinI i, False)
-
-reptransG :: Graph IntTreeF -> Graph IntTreeF
-reptransG =  snd . runRewriteGraph res minS (minI >*< isLeft) trans' init
-  where init (MinS i) = (MinI i, False)
-        res (i,b1) (_,b2) = (i,b1||b2)
-
-reptransGST :: Graph IntTreeF -> Graph IntTreeF
-reptransGST =  snd . runRewriteGraphST res minS (minI >*< isLeft) trans' init
-  where init (MinS i) = (MinI i, False)
-        res (i,b1) (_,b2) = (i,b1||b2)
-
-reptransGFST :: Free.Graph IntTreeF -> Free.Graph IntTreeF
-reptransGFST =  snd . Free.runRewriteGraphST res minS (minI >*< isLeft) trans' init
-  where init (MinS i) = (MinI i, False)
-        res (i,b1) (_,b2) = (i,b1||b2)
-reptransGFNEST :: FNE.Graph IntTreeF -> FNE.Graph IntTreeF
-reptransGFNEST =  snd . FNE.runRewriteGraphST const minS (minI >*< isLeft) trans' init
-  where init (MinS i) = (MinI i, False)
+repmin_linearSimpleBig n = bgroup "linearSimpleBig"
+    [bench' (show n) repminSimple $ linearSimple n | n <- [100,200..n]]
 
 
-reptrans_expTree n = bgroup "expTree"
-    [bench' (show n) reptrans $ expTree n | n <- [12..n]]
-  -- Grows exponentially
-
-reptrans_expGraph n = bgroup "expGraph"
-    [bench' (show n) reptransG $ expGraph n | n <- [12..n]]
-
-reptrans_expGraphST n = bgroup "expGraphST"
-    [bench' (show n) reptransGST $ expGraph n | n <- [12..n]]
-
-reptrans_expGraphFST n = bgroup "expGraphFST"
-    [bench' (show n) reptransGFST $ expGraphF n | n <- [12..n]]
-
-reptrans_expGraphFNEST n = bgroup "expGraphFNEST"
-    [bench' (show n) reptransGFNEST $ expGraphFNE n | n <- [12..n]]
+repmin_linearSimpleBigST n = bgroup "linearSimpleBigST"
+    [bench' (show n) repminSimpleST $ linearSimple n | n <- [100,200..n]]
 
 
-reptrans_linearGraphBigST n = bgroup "linearGraphBigST"
-    [bench' (show n) reptransGST $ linearGraph n | n <- [100,200..n]]
+repmin_linearFreeBigST n = bgroup "linearFreeBigST"
+    [bench' (show n) repminFreeST $ linearFree n | n <- [100,200..n]]
+
+repmin_linearDagBigST n = bgroup "linearDagBigST"
+    [bench' (show n) repminGST $ linearDag n | n <- [100,200..n]]
 
 
-reptrans_linearGraphBigFST n = bgroup "linearGraphBigFST"
-    [bench' (show n) reptransGFST $ linearGraphF n | n <- [100,200..n]]
-
-reptrans_linearGraphBigFNEST n = bgroup "linearGraphBigFNEST"
-    [bench' (show n) reptransGFNEST $ linearGraphFNE n | n <- [100,200..n]]
 
 
 main = do
-    defaultMainWith (conf "reduce_overhead_expTree")         [reduce_expTree               16]
-    defaultMainWith (conf "reduce_overhead_expGraph")        [reduce_expGraph              16]
-    defaultMainWith (conf "reduce_overhead_expGraphST")      [reduce_expGraphST            16]
-    defaultMainWith (conf "reduce_overhead_expGraphF")       [reduce_expGraphF             16]
-    defaultMainWith (conf "reduce_overhead_expGraphFST")     [reduce_expGraphFST           16]
-    defaultMainWith (conf "reduce_overhead_expGraphFNE")     [reduce_expGraphFNE           16]
-    defaultMainWith (conf "reduce_overhead_expGraphFNEST")   [reduce_expGraphFNEST         16]
-    defaultMainWith (conf "reduce_sharing_expTree")          [reduce_expTree               12]
-    defaultMainWith (conf "reduce_sharing_expGraph")         [reduce_expGraph              12]
-    defaultMainWith (conf "reduce_sharing_expGraphST")       [reduce_expGraphST            12]
-    defaultMainWith (conf "reduce_sharing_expGraphF")        [reduce_expGraphF             12]
-    defaultMainWith (conf "reduce_sharing_linearGraph")      [reduce_linearGraph           12]
-    defaultMainWith (conf "reduce_sharing_linearGraphF")     [reduce_linearGraphF          12]
-    defaultMainWith (conf "reduce_big_linearGraph")          [reduce_linearGraphBig        1000]
-    defaultMainWith (conf "reduce_big_linearGraphST")        [reduce_linearGraphBigST      1000]
-    defaultMainWith (conf "reduce_big_linearGraphF")         [reduce_linearGraphBigF       1000]
-    defaultMainWith (conf "reduce_big_linearGraphFST")       [reduce_linearGraphBigFST     1000]
-    defaultMainWith (conf "reduce_big_linearGraphFNE")       [reduce_linearGraphBigFNE     1000]
-    defaultMainWith (conf "reduce_big_linearGraphFNEST")     [reduce_linearGraphBigFNEST   1000]
+    defaultMainWith (conf "reduce_expTree")            [reduce_expTree           16]
+    defaultMainWith (conf "reduce_expSimple")          [reduce_expSimple         16]
+    defaultMainWith (conf "reduce_expSimpleST")        [reduce_expSimpleST       16]
+    defaultMainWith (conf "reduce_expFree")            [reduce_expFree           16]
+    defaultMainWith (conf "reduce_expFreeST")          [reduce_expFreeST         16]
+    defaultMainWith (conf "reduce_expDag")             [reduce_expDag            16]
+    defaultMainWith (conf "reduce_expDagST")           [reduce_expDagST          16]
 
-    defaultMainWith (conf "repmin_overhead_expTree")         [repmin_expTree               16]
-    defaultMainWith (conf "repmin_overhead_expGraph")        [repmin_expGraph              16]
-    defaultMainWith (conf "repmin_overhead_expGraph'")       [repmin_expGraph'             12]  -- OBS only up to 12
-    defaultMainWith (conf "repmin_overhead_expGraphST'")     [repmin_expGraphST'           16]
-    defaultMainWith (conf "repmin_overhead_expGraphFST'")    [repmin_expGraphFST'          16]
-    defaultMainWith (conf "repmin_overhead_expGraphFNEST'")  [repmin_expGraphFNEST'        16]
-    defaultMainWith (conf "repmin_sharing_expTree")          [repmin_expTree               12]
-    defaultMainWith (conf "repmin_sharing_expGraph")         [repmin_expGraph              12]
-    defaultMainWith (conf "repmin_sharing_linearGraph")      [repmin_linearGraph           12]
-    defaultMainWith (conf "repmin_sharing_linearGraph'")     [repmin_linearGraph           12]
-    defaultMainWith (conf "repmin_big_linearGraph")          [repmin_linearGraphBig        1000]
-    defaultMainWith (conf "repmin_big_linearGraphST")        [repmin_linearGraphBigST      1000]
-    defaultMainWith (conf "repmin_big_linearGraphFST")       [repmin_linearGraphBigFST     1000]
-    defaultMainWith (conf "repmin_big_linearGraphFNEST")     [repmin_linearGraphBigFNEST   1000]
+    defaultMainWith (conf "reduce_linearSimple")       [reduce_linearSimple      16]
+    defaultMainWith (conf "reduce_linearSimpleST")     [reduce_linearSimpleST    16]
+    defaultMainWith (conf "reduce_linearFree")         [reduce_linearFree        16]
+    defaultMainWith (conf "reduce_linearFreeST")       [reduce_linearFreeST      16]
+    defaultMainWith (conf "reduce_linearDag")          [reduce_linearDag         16]
+    defaultMainWith (conf "reduce_linearDagST")        [reduce_linearDagST       16]
 
-    defaultMainWith (conf "reptrans_overhead_expTree")       [reptrans_expTree             16]
-    defaultMainWith (conf "reptrans_overhead_expGraph")      [reptrans_expGraph            12]  -- OBS only up to 12
-    defaultMainWith (conf "reptrans_overhead_expGraphST")    [reptrans_expGraphST          16]
-    defaultMainWith (conf "reptrans_overhead_expGraphFST")   [reptrans_expGraphFST         16]
-    defaultMainWith (conf "reptrans_overhead_expGraphFNEST") [reptrans_expGraphFNEST       16]
-    defaultMainWith (conf "reptrans_big_linearGraphST")      [reptrans_linearGraphBigST    1000]
-    defaultMainWith (conf "reptrans_big_linearGraphFST")     [reptrans_linearGraphBigFST   1000]
-    defaultMainWith (conf "reptrans_big_linearGraphFNEST")   [reptrans_linearGraphBigFNEST 1000]
+    defaultMainWith (conf "reduce_big_linearSimple")   [reduce_linearDagBigS     1000]
+    defaultMainWith (conf "reduce_big_linearSimpleST") [reduce_linearDagBigSST   1000]
+    defaultMainWith (conf "reduce_big_linearFree")     [reduce_linearFreeBig     1000]
+    defaultMainWith (conf "reduce_big_linearFreeST")   [reduce_linearFreeBigST   1000]
+    defaultMainWith (conf "reduce_big_linearDag")      [reduce_linearDagBig      1000]
+    defaultMainWith (conf "reduce_big_linearDagST")    [reduce_linearDagBigST    1000]
+
+    defaultMainWith (conf "repmin_expTree")            [repmin_expTree           16]
+    defaultMainWith (conf "repmin_expSimple")          [repmin_expSimple         12]  -- OBS only up to 12
+    defaultMainWith (conf "repmin_expSimpleST")        [repmin_expSimpleST       12]
+    defaultMainWith (conf "repmin_expFreeST")          [repmin_expFreeST         16]
+    defaultMainWith (conf "repmin_expDagST")           [repmin_expDagST          16]
+
+    defaultMainWith (conf "repmin_linearSimple")       [repmin_linearSimple      16]
+    defaultMainWith (conf "repmin_linearSimpleST")     [repmin_linearSimpleST    16]
+    defaultMainWith (conf "repmin_linearFreeST")       [repmin_linearFreeST      16]
+    defaultMainWith (conf "repmin_linearDagST")        [repmin_linearDagST       16]
+
+    defaultMainWith (conf "repmin_big_linearSimple")   [repmin_linearSimpleBig   1000]
+    defaultMainWith (conf "repmin_big_linearSimpleST") [repmin_linearSimpleBigST 1000]
+    defaultMainWith (conf "repmin_big_linearFreeST")   [repmin_linearFreeBigST   1000]
+    defaultMainWith (conf "repmin_big_linearDagST")    [repmin_linearDagBigST    1000]

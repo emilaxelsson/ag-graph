@@ -16,9 +16,11 @@ import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Traversable (Traversable)
+import System.IO.Unsafe
+
 
 import AG
-import Graph
+import Dag
 
 
 
@@ -36,6 +38,9 @@ trueIntersection = Map.mergeWithKey (\_ x1 x2 -> if x1 == x2 then Just x1 else N
 
 data IntTree = Leaf' Int | Node' IntTree IntTree
   deriving (Eq, Show)
+
+iNode x y = In (Node x y)
+iLeaf i = In (Leaf i)
 
 t =  let  a  =  Node (Node (Leaf 2) (Leaf 3)) (Leaf 4)
      in   Node a a
@@ -64,34 +69,32 @@ leavesBelowS (Node t1 t2)  =  below t1 `Set.union` below t2
 leavesBelow' :: Int -> Tree IntTreeF -> Set Int
 leavesBelow' d = runAG leavesBelowS leavesBelowI (const d)
 
-leavesBelowG :: Int -> Graph IntTreeF -> Set Int
-leavesBelowG d = runAGGraph min leavesBelowS leavesBelowI (const d)
+leavesBelowG :: Int -> Dag IntTreeF -> Set Int
+leavesBelowG d = runAGDag min leavesBelowS leavesBelowI (const d)
 
-i1 = mkGraph 0
-    [ (0, Node 1 2)
-    , (1, Node 2 3)
-    , (2, Node 4 4)
-    , (3, Leaf 10)
-    , (4, Leaf 20)
-    ]
+it1 :: Tree IntTreeF
+it1 = iNode (iNode x (iLeaf 10)) x
+    where x = iNode y y
+          y = iLeaf 20
+
+i1 :: Dag IntTreeF
+i1 = unsafePerformIO $ reifyDag it1
+
+
+it2 :: Tree IntTreeF
+it2 = iNode x (iNode (iLeaf 5) x)
+    where x = iNode (iNode (iLeaf 24) (iLeaf 3)) (iLeaf 4)
+
+i2 :: Dag IntTreeF
+i2 = unsafePerformIO $ reifyDag it2
+
 
 intTreeTestG1 = leavesBelowG 3 i1
-intTreeTestT1 = leavesBelow' 3 (unravelGraph i1)
+intTreeTestT1 = leavesBelow' 3 (unravelDag i1)
 
-i2 :: Graph IntTreeF
-i2 = mkGraph 0
-    [ (0, Node 2 1)
-    , (1, Node 4 2)
-    , (2, Node 3 5)
-    , (3, Node 6 7)
-    , (4, Leaf 5)
-    , (5, Leaf 4)
-    , (6, Leaf 24)
-    , (7, Leaf 3)
-    ]
 
 intTreeTestG2 = leavesBelowG 3 i2
-intTreeTestT2 = leavesBelow' 3 (unravelGraph i2)
+intTreeTestT2 = leavesBelow' 3 (unravelDag i2)
 
 
 
@@ -172,6 +175,12 @@ data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
              |  Iter' Name a a a
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
+iIter n x y z = In (Iter' n x y z)
+iAdd x y = In (Add' x y)
+iVar x = In (Var' x)
+iLitI l = In (LitI' l)
+iLitB l = In (LitB' l)
+
 typeOf ::  (?below :: a -> atts, Maybe Type :< atts) =>
            a -> Maybe Type
 typeOf = below
@@ -207,43 +216,49 @@ typeInfI _                =  o
 typeInf :: Env -> Tree ExpF -> Maybe Type
 typeInf env = runAG typeInfS typeInfI (const env)
 
-typeInfG :: Env -> Graph ExpF -> Maybe Type
-typeInfG env = runAGGraph trueIntersection typeInfS typeInfI (const env)
+typeInfG :: Env -> Dag ExpF -> Maybe Type
+typeInfG env = runAGDag trueIntersection typeInfS typeInfI (const env)
 
-g1 = mkGraph 0
-    [ (0, Iter' "x" 1 1 2)
-    , (1, LitI' 10)
-    , (2, Add' 3 4)
-    , (3, Iter' "y" 5 5 6)
-    , (4, Var' "x")
-    , (5, LitI' 5)
-    , (6, Add' 5 4)
-    ]
+
+gt1 :: Tree ExpF
+gt1 = iIter "x" x x (iAdd (iIter "y" z z (iAdd z y)) y)
+    where x = iLitI 10
+          y = iVar "x"
+          z = iLitI 5
+
+g1 :: Dag ExpF
+g1 = unsafePerformIO $ reifyDag gt1
+
+gt2 :: Tree ExpF
+gt2 = iIter "x" x (iIter "x" x x y) y
+    where x = iLitI 0
+          y = iVar "x"
+
+g2 :: Dag ExpF
+g2 = unsafePerformIO $ reifyDag gt2
+
+
+gt3 :: Tree ExpF
+gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
+    where x = iLitI 10
+          y = iLitB False
+          z = iVar "x"
+
+g3 :: Dag ExpF
+g3 = unsafePerformIO $ reifyDag gt3
+
+
 
 typeTestG1 = typeInfG Map.empty g1
-typeTestT1 = typeInf Map.empty (unravelGraph g1)
+typeTestT1 = typeInf Map.empty (unravelDag g1)
 
-g2 = mkGraph 0
-    [ (0, Iter' "x" 1 2 3)
-    , (1, LitI' 0)
-    , (2, Iter' "x" 1 1 3)
-    , (3, Var' "x")
-    ]
 
 typeTestG2 = typeInfG Map.empty g2
-typeTestT2 = typeInf Map.empty (unravelGraph g2)
+typeTestT2 = typeInf Map.empty (unravelDag g2)
 
-g3 = mkGraph 0
-    [ (0, Add' 1 3)
-    , (1, Iter' "x" 2 2 5)
-    , (2, LitI' 10)
-    , (3, Iter' "x" 4 4 5)
-    , (4, LitB' False)
-    , (5, Var' "x")
-    ]
 
 typeTestG3 = typeInfG Map.empty g3
-typeTestT3 = typeInf Map.empty (unravelGraph g3)
+typeTestT3 = typeInf Map.empty (unravelDag g3)
 
 
 
@@ -272,8 +287,8 @@ repmin :: Tree IntTreeF -> Tree IntTreeF
 repmin = snd . runAG (minS |*| rep) minI init
   where init (MinS i,_) = MinI i
 
-repminG :: Graph IntTreeF -> Tree IntTreeF
-repminG =  snd . runAGGraph const (minS |*| rep) minI init
+repminG :: Dag IntTreeF -> Tree IntTreeF
+repminG =  snd . runAGDag const (minS |*| rep) minI init
   where init (MinS i,_) = MinI i
 
 rep' ::  (MinI :< atts) => Rewrite IntTreeF atts IntTreeF
@@ -284,17 +299,17 @@ repmin' :: Tree IntTreeF -> Tree IntTreeF
 repmin' = snd . runRewrite minS minI rep' init
   where init (MinS i) = MinI i
 
-repminG' :: Graph IntTreeF -> Graph IntTreeF
-repminG' = snd . runRewriteGraph const minS minI rep' init
+repminG' :: Dag IntTreeF -> Dag IntTreeF
+repminG' = snd . runRewriteDagST const minS minI rep' init
   where init (MinS i) = MinI i
 
 repminTestG1  = repminG i1
 repminTestG1' = repminG' i1
-repminTestT1  = repmin (unravelGraph i1)
+repminTestT1  = repmin (unravelDag i1)
 
 repminTestG2  = repminG i2
 repminTestG2' = repminG' i2
-repminTestT2  = repmin (unravelGraph i2)
+repminTestT2  = repmin (unravelDag i2)
 
 
 
@@ -302,7 +317,7 @@ repminTestT2  = repmin (unravelGraph i2)
 -- * Circuit
 --------------------------------------------------------------------------------
 
-type Circuit = Graph IntTreeF
+type Circuit = Dag IntTreeF
 
 newtype Delay  = Delay  Int  deriving (Eq,Ord,Show,Num)
 newtype Load   = Load   Int  deriving (Eq,Ord,Show,Num)
@@ -318,14 +333,14 @@ gateLoad (Node a b)  = a |-> 1 & b |-> 1
 gateLoad _           = o
 
 delay :: Circuit -> Load -> Delay
-delay g l = runAGGraph (+) gateDelay gateLoad (const l) g
+delay g l = runAGDag (+) gateDelay gateLoad (const l) g
 
 delayTree :: Tree IntTreeF -> Load -> Delay
 delayTree c l = runAG gateDelay gateLoad (const l) c
 
 circTestG1 = delay i1 3
-circTestT1 = delayTree (unravelGraph i1) 3
+circTestT1 = delayTree (unravelDag i1) 3
 
 circTestG2 = delay i2 3
-circTestT2 = delayTree (unravelGraph i2) 3
+circTestT2 = delayTree (unravelDag i2) 3
 

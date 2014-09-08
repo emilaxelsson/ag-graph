@@ -10,17 +10,17 @@
 {-# LANGUAGE RecursiveDo #-}
 
 
--- Alternative representation of graph that combines the simple graph
--- representation from the "Graph" module with the tree
+-- Alternative representation of dags that combines the simple graph
+-- representation from the "DagSimple" module with the tree
 -- representation. The goal of this representation is to reduce the
 -- overhead of the graph representation for graphs with little or no
 -- sharing.
 
-module GraphFree where
+module DagFree where
 
-import qualified Graph as Simple
+import qualified DagSimple
 
-import Graph (Node, _root, _eqs, _next)
+import DagSimple (Node, root, edges, nodeCount)
 
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
@@ -40,19 +40,19 @@ import Data.Maybe
 
 import AG
 
-type Graph f = Simple.Graph (Free f)
+type Dag f = DagSimple.Dag (Free f)
 
 
--- | This function runs an AG on a graph.
-runAGGraph :: forall f d u .Traversable f
+-- | This function runs an AG on a dag.
+runAGDag :: forall f d u .Traversable f
     => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
     -> (u -> d)        -- ^ Initial top-down state
-    -> Graph f
+    -> Dag f
     -> u
-runAGGraph res syn inh dinit g = uFin where
-    uFin = umapFin IntMap.! _root g
+runAGDag res syn inh dinit g = uFin where
+    uFin = umapFin IntMap.! root g
     dFin = dinit uFin
     run :: d -> Free f Node -> (u, IntMap d)
     run d (Ret x) = (umapFin IntMap.! x, IntMap.singleton x d)
@@ -69,30 +69,30 @@ runAGGraph res syn inh dinit g = uFin where
             j `seq` put (IntMap.unionWith res dmap' oldDmap, j)
             return (Numbered i (u',d'))
     dmapFin = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2) 
-           (IntMap.singleton (_root g) dFin) result
+           (IntMap.singleton (root g) dFin) result
     umapFin = IntMap.map fst result
-    result = IntMap.mapWithKey (\ n t -> run (dmapFin IntMap.! n) t) (_eqs g)
+    result = IntMap.mapWithKey (\ n t -> run (dmapFin IntMap.! n) t) (edges g)
 
 
--- | Alternative implementation of 'runAGGraph' that uses mutable
+-- | Alternative implementation of 'runAGDag' that uses mutable
 -- vectors for caching intermediate values.
 
-runAGGraphST :: forall f d u .Traversable f
+runAGDagST :: forall f d u .Traversable f
     => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
     -> (u -> d)        -- ^ Initial top-down state
-    -> Graph f
+    -> Dag f
     -> u
-runAGGraphST res syn inh dinit g = uFin where
+runAGDagST res syn inh dinit g = uFin where
     uFin = runST runM
     dFin = dinit uFin
     runM :: forall s . ST s u
     runM = mdo
-      dmap <- MVec.new (_next g)
+      dmap <- MVec.new (nodeCount g)
       MVec.set dmap Nothing
-      MVec.unsafeWrite dmap (_root g) (Just dFin)
-      umap <- MVec.new (_next g)
+      MVec.unsafeWrite dmap (root g) (Just dFin)
+      umap <- MVec.new (nodeCount g)
       count <- newSTRef 0
       let run :: d -> Free f Node -> ST s u
           run d (Ret x) = do 
@@ -119,32 +119,31 @@ runAGGraphST res syn inh dinit g = uFin where
           iter (n, t) = do 
             u <- run (fromJust $ dmapFin Vec.! n) t
             MVec.unsafeWrite umap n u
-      mapM_ iter (IntMap.toList $ _eqs g)
+      mapM_ iter (IntMap.toList $ edges g)
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
-      return (umapFin Vec.! _root g)
+      return (umapFin Vec.! root g)
 
 
-runRewriteGraphST :: forall f g d u .(Traversable f, Functor g, Foldable g)
+runRewriteDagST :: forall f g d u .(Traversable f, Functor g, Foldable g)
     => (d -> d -> d)       -- ^ Resolution of top-down state
     -> Syn' f (u,d) u      -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d      -- ^ Top-down state propagation
     -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
     -> (u -> d)            -- ^ Initial top-down state
-    -> Graph f
-    -> (u, Graph g)
-runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
+    -> Dag f
+    -> (u, Dag g)
+runRewriteDagST res syn inh rewr dinit g = (uFin, gFin) where
     (uFin,gFin) = runST runM
     dFin = dinit uFin
-    runM :: forall s . ST s (u, Graph g)
+    runM :: forall s . ST s (u, Dag g)
     runM = mdo
-      dmap <- MVec.new (_next g)
+      dmap <- MVec.new (nodeCount g)
       MVec.set dmap Nothing
-      MVec.unsafeWrite dmap (_root g) (Just dFin)
-      umap <- MVec.new (_next g)
-      allEqs <- MVec.new (_next g)
+      MVec.unsafeWrite dmap (root g) (Just dFin)
+      umap <- MVec.new (nodeCount g)
+      allEqs <- MVec.new (nodeCount g)
       count <- newSTRef 0
-      let eqs = _eqs g
       let iter (node,s) = do 
              let d = fromJust $ dmapFin Vec.! node
              (u,t) <- run d s
@@ -171,7 +170,7 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
              result <- Traversable.mapM run' t
              let t' = join $ fmap (snd . unNumbered) $ explicit rewr (u,d) (fst . unNumbered) result
              return (u, t')
-      mapM_ iter $ IntMap.toList $ _eqs g
+      mapM_ iter $ IntMap.toList $ edges g
       dmapFin <- Vec.unsafeFreeze dmap
       umapFin <- Vec.unsafeFreeze umap
       allEqsFin <- Vec.unsafeFreeze allEqs
@@ -182,10 +181,10 @@ runRewriteGraphST res syn inh rewr dinit g = (uFin, gFin) where
                       let t = allEqsFin Vec.! n
                       writeSTRef newEqs (IntMap.insert n t new)
                       Foldable.mapM_ build t
-      build (_root g)
+      build (root g)
       eqs' <- readSTRef newEqs
-      return (umapFin Vec.! _root g, g {_eqs = eqs'})
+      return (umapFin Vec.! root g, g {edges = eqs'})
 
 
-termTree :: Functor f => Tree f -> Graph f
-termTree t = Simple.Graph 0 (IntMap.singleton 0 (freeTree t)) 1
+termTree :: Functor f => Tree f -> Dag f
+termTree t = DagSimple.Dag 0 (IntMap.singleton 0 (freeTree t)) 1

@@ -1,83 +1,68 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE BangPatterns           #-}
+{-# LANGUAGE DeriveFunctor          #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs                  #-}
+{-# LANGUAGE ImplicitParams         #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE Rank2Types             #-}
+{-# LANGUAGE RecursiveDo            #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
---------------------------------------------------------------------------------
--- |
--- Module      :  Data.Comp.Graph
--- Copyright   :  (c) 2012 Patrick Bahr
--- License     :  BSD3
--- Stability   :  experimental
--- Portability :  non-portable (GHC Extensions)
---
---
---------------------------------------------------------------------------------
 
--- Original copied from the "graph" branch at <https://bitbucket.org/paba/compdata>
+-- Naive representation of dags.
 
-module Graph
+module DagSimple
     ( module AG
-    , Graph (..)
+    , Dag (..)
     , Node
     , termTree
-    , unravelGraph
-    , appGraphCxt
-    , reifyGraph
-    , reifyDAG
-    , graphCata
-    , graphEdges
+    , unravelDag
+    , reifyDag
     , lookupNode
-
-    , mkGraph
-    , liftGraph
+    , mkDag
+    , liftDag
     , image
     , reachable
     , removeOrphans
-    , reindexGraph
-    , appCxtGraph
-    , runRewriteGraph
-    , runRewriteGraphST
-    , runAGGraph
-    , runAGGraphST
+    , reindexDag
+    , appCxtDag
+    , runRewriteDag
+    , runRewriteDagST
+    , runAGDag
+    , runAGDagST
     ) where
 
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.HashMap.Lazy (HashMap)
 import qualified Data.HashMap.Lazy as HashMap
-import Data.HashSet (HashSet)
-import qualified Data.HashSet as HashSet
+
+
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 import Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 
 
-import Data.Traversable (Traversable)
-import qualified Data.Traversable as Traversable
-import Data.List (intercalate)
 import Control.Monad.State
 import Control.Monad.Writer
-import Control.Monad.Reader
-import Control.Monad.Error
+import Data.List (intercalate)
+import Data.Traversable (Traversable)
+import qualified Data.Traversable as Traversable
+
+
 import System.Mem.StableName
 
 
 import Control.Monad.ST
+import Data.Maybe
 import Data.STRef
 import qualified Data.Vector as Vec
 import qualified Data.Vector.Generic.Mutable as MVec
-import Data.Maybe
 
 import Safe
 
@@ -86,46 +71,24 @@ import AG
 
 type Node = Int
 
--- | This type represents graphs over a given signature with a
--- distinguished root node. Such graphs, also known as term graphs,
+-- | This type represents dags over a given signature with a
+-- distinguished root node. Such dags, also known as term dags,
 -- represent terms. This representation is given by the unravelling
--- operation (cf. 'unravelGraph').
-data Graph f = Graph { _root :: Node
-                     , _eqs :: IntMap (f Node)
-                     , _next :: Node }
+-- operation (cf. 'unravelDag').
+data Dag f = Dag { root          :: Node
+                     , edges     :: IntMap (f Node)
+                     , nodeCount :: Node }
 
-data GraphCxt f a = GraphCxt { _graph :: Graph f
-                             , _holes :: IntMap a }
 
-graphEdges :: Graph f -> IntMap (f Node)
-graphEdges = _eqs
-
-type AppT f = (Node, IntMap Node, [(Node, f Node)])
-
-appGraphCxt :: forall f . (Functor f) => GraphCxt f (Graph f) -> Graph f
-appGraphCxt (GraphCxt (Graph root eqs nx) (holes)) = Graph root' eqs' nx'
-    where run :: Node -> Graph f -> AppT f -> AppT f
-          run n (Graph r e nx) (next,rename,neweqs) =
-              (next+nx,
-               IntMap.insert n (r+next) rename,
-               [(left + next, fmap (+next) right) | (left , right ) <- IntMap.toList e] ++ neweqs)
-          init :: AppT g
-          init = (nx,IntMap.empty, [])
-          (nx',rename,new)= IntMap.foldrWithKey run init holes
-          renameFun :: Node -> Node
-          renameFun n = IntMap.findWithDefault n n rename
-          eqs' = foldl (\ m (k,v) -> IntMap.insert k v m) (IntMap.map (fmap renameFun) eqs) new
-          root' = renameFun root
-
--- | This function turns a term into a graph without (explicit)
+-- | This function turns a term into a dag without (explicit)
 -- sharing, i.e. a tree. The following property holds for 'termTree'
--- and 'unravelGraph':
--- 
+-- and 'unravelDag':
+--
 -- @
--- unravelGraph (termTree x) == x
+-- unravelDag (termTree x) == x
 -- @
-termTree :: Traversable f => Tree f -> Graph f
-termTree t = Graph 0 imap nx
+termTree :: Traversable f => Tree f -> Dag f
+termTree t = Dag 0 imap nx
     where (imap,nx) = runState (liftM snd $ runWriterT $ build t) 0
           build :: Traversable f => Tree f -> WriterT (IntMap (f Node)) (State Node) Node
           build (In t) = do n <- get
@@ -134,38 +97,31 @@ termTree t = Graph 0 imap nx
                             tell $ IntMap.singleton n res
                             return n
 
--- | This function unravels a given graph to the term it
+-- | This function unravels a given dag to the term it
 -- represents. The following property holds for 'termTree' and
--- 'unravelGraph':
--- 
+-- 'unravelDag':
+--
 -- @
--- unravelGraph (termTree x) == x
+-- unravelDag (termTree x) == x
 -- @
-unravelGraph :: forall f. Functor f => Graph f -> Tree f
-unravelGraph g = build (_root g)
+unravelDag :: forall f. Functor f => Dag f -> Tree f
+unravelDag g = build (root g)
     where build :: Node -> Tree f
-          build n = In $ fmap build $ lookupNode n (graphEdges g)
+          build n = In $ fmap build $ lookupNode n (edges g)
 
-type Alg f c = f c -> c
-
-graphCata :: forall f c . Functor f => Alg f c -> Graph f -> c
-graphCata alg g = run (_root g)
-    where run :: Node -> c
-          run n = alg $ fmap run $ lookupNode n (graphEdges g)
-
--- | Internal function used to lookup the nodes in a graph. It assumes
--- a node of a graph that is either the root node or a target node of
+-- | Internal function used to lookup the nodes in a dag. It assumes
+-- a node of a dag that is either the root node or a target node of
 -- one of the edges. The implementation of this function makes use of
 -- the invariant that each such node must also be in the domain of the
--- IntMap of the graph.
+-- IntMap of the dag.
 lookupNode :: Node -> IntMap (f Node) -> f Node
 lookupNode n imap = fromJustNote "edge leading to an undefined node" $ IntMap.lookup n imap
 
--- | This function takes a term, and returns a 'Graph' with the
+-- | This function takes a term, and returns a 'Dag' with the
 -- implicit sharing of the input data structure made explicit.
-reifyGraph :: Traversable f => Tree f -> IO (Graph f)
-reifyGraph m = do (root, state) <- runStateT (findNodes m) init
-                  return (Graph root (rsEqs state) (rsNext state))
+reifyDag :: Traversable f => Tree f -> IO (Dag f)
+reifyDag m = do (root, state) <- runStateT (findNodes m) init
+                return (Dag root (rsEqs state) (rsNext state))
     where  init = ReifyState
                   { rsStable = HashMap.empty
                   , rsEqs = IntMap.empty
@@ -173,8 +129,8 @@ reifyGraph m = do (root, state) <- runStateT (findNodes m) init
 
 data ReifyState f = ReifyState
     { rsStable :: HashMap (StableName (f (Tree f))) Node
-    , rsEqs :: IntMap (f Node)
-    , rsNext :: Node
+    , rsEqs    :: IntMap (f Node)
+    , rsNext   :: Node
     }
 
 findNodes :: Traversable f => Tree f -> StateT (ReifyState f) IO Node
@@ -191,58 +147,25 @@ findNodes (In !j) = do
                         return var
 
 
--- | This function takes a term, and returns a 'Graph' with the
--- implicit sharing of the input data structure made
--- explicit. Moreover it checks that the constructed graph is acyclic
--- and only returns the graph it is acyclic.
-reifyDAG :: Traversable f => Tree f -> IO (Maybe (Graph f))
-reifyDAG m = do res <- runErrorT (runStateT (runReaderT (findNodes' m) HashSet.empty) init)
-                case res of 
-                  Left _ -> return Nothing
-                  Right (root, state) ->return (Just (Graph root (rsEqs state) (rsNext state)))
-    where  init = ReifyState
-                  { rsStable = HashMap.empty
-                  , rsEqs = IntMap.empty
-                  , rsNext = 0 }
 
-
-findNodes' :: Traversable f => Tree f -> 
-              ReaderT (HashSet (StableName (f (Tree f))))  
-               (StateT (ReifyState f) (ErrorT String IO)) Node
-findNodes' (In !j) = do
-        st <- liftIO $ makeStableName j
-        seen <- ask
-        when (HashSet.member st seen) (throwError "")
-        tab <- liftM rsStable get
-        case HashMap.lookup st tab of
-          Just var -> return $ var
-          Nothing -> do var <- liftM rsNext get
-                        modify (\s -> s{ rsNext = var + 1
-                                       , rsStable = HashMap.insert st var tab})
-                        res <- local (HashSet.insert st) (Traversable.mapM findNodes' j)
-                        modify (\s -> s { rsEqs = IntMap.insert var res (rsEqs s)})
-                        return var
-
-
-
-instance (Show (f String), Functor f) => Show (Graph f)
+instance (Show (f String), Functor f) => Show (Dag f)
   where
-    show (Graph r es _) = unwords
-        [ "mkGraph"
+    show (Dag r es _) = unwords
+        [ "mkDag"
         , show r
         , showLst ["(" ++ show n ++ "," ++ show (fmap show f) ++ ")" | (n,f) <- IntMap.toList es ]
         ]
       where
         showLst ss = "[" ++ intercalate "," ss ++ "]"
 
--- | Construct a graph
-mkGraph :: Node -> [(Node, f Node)] -> Graph f
-mkGraph r es = Graph r (IntMap.fromList es) (maximum (map fst es) + 1)
+-- | Construct a dag
+mkDag :: Node -> [(Node, f Node)] -> Dag f
+mkDag r es = Dag r (IntMap.fromList es) (maximum (map fst es) + 1)
 
--- | Lift an 'IntMap.IntMap' operation to a 'Graph'. Assumes that the function does not affect the
+-- | Lift an 'IntMap.IntMap' operation to a 'Dag'. Assumes that the function does not affect the
 -- set of keys.
-liftGraph :: (Node -> IntMap (f Node) -> IntMap (g Node)) -> Graph f -> Graph g
-liftGraph f (Graph r es nx) = Graph r (f r es) nx
+liftDag :: (Node -> IntMap (f Node) -> IntMap (g Node)) -> Dag f -> Dag g
+liftDag f (Dag r es nx) = Dag r (f r es) nx
 
 -- | Fixed-point iteration
 fixedpoint :: Eq a => (a -> a) -> (a -> a)
@@ -265,15 +188,15 @@ image es ns = IntSet.fromList $ concatMap (Foldable.toList . (es IntMap.!)) $ In
 reachable :: Foldable f => Node -> IntMap (f Node) -> IntSet
 reachable n es = fixedpoint (mkMonot (image es)) (IntSet.singleton n)
 
--- | Removes orphan nodes from a graph
+-- | Removes orphan nodes from a dag
 removeOrphans :: Foldable f => Node -> IntMap (f Node) -> IntMap (f Node)
 removeOrphans r es = IntMap.fromSet (es IntMap.!) rs
   where
     rs = reachable r es
 
--- | Make an equivalent graph using consecutive indexes form 0 and up
-reindexGraph :: Functor f => Graph f -> Graph f
-reindexGraph (Graph r es nx) = Graph (reix r) es' nx'
+-- | Make an equivalent dag using consecutive indexes form 0 and up
+reindexDag :: Functor f => Dag f -> Dag f
+reindexDag (Dag r es _) = Dag (reix r) es' nx'
   where
     (ns,fs) = unzip $ IntMap.toList es
     reix    = (IntMap.!) (IntMap.fromList (zip ns [0..]))
@@ -294,8 +217,8 @@ chase es n = case es IntMap.! n of
     Indirect n' -> chase es n'
     _ -> n
 
-removeIndirections :: Functor f => Graph (Indirect f) -> Graph f
-removeIndirections (Graph r es nx) = Graph (chase es r) es' nx
+removeIndirections :: Functor f => Dag (Indirect f) -> Dag f
+removeIndirections (Dag r es nx) = Dag (chase es r) es' nx
   where
     es' = IntMap.mapMaybe direct $ fmap (fmap (chase es)) es
 
@@ -324,22 +247,22 @@ listCxtTop n (In f)  = do
     tell [(n, Direct f')]
     tell $ map (\(n,f) -> (n, Direct f)) es
 
--- | Joining a graph of contexts. The node identifiers in the resulting graph are unrelated to those
--- in the original graph.
-appCxtGraph :: Traversable f => Graph (Free f) -> Graph f
-appCxtGraph g = removeIndirections $ Graph r (IntMap.fromList es') nx'
+-- | Joining a dag of contexts. The node identifiers in the resulting dag are unrelated to those
+-- in the original dag.
+appCxtDag :: Traversable f => Dag (Free f) -> Dag f
+appCxtDag g = removeIndirections $ Dag r (IntMap.fromList es') nx'
   where
-    Graph r es nx = reindexGraph g
+    Dag r es nx = reindexDag g
     (es',nx')     = flip runState nx
                   $ execWriterT
                   $ Traversable.mapM (uncurry listCxtTop)
                   $ IntMap.assocs
                   $ es
 
-mapGraphM :: Monad m => (Node -> f Node -> m (g Node)) -> Graph f -> m (Graph g)
-mapGraphM f g = do
-    es <- Traversable.sequence $ IntMap.mapWithKey f $ graphEdges g
-    return g {_eqs = es}
+mapDagM :: Monad m => (Node -> f Node -> m (g Node)) -> Dag f -> m (Dag g)
+mapDagM f g = do
+    es <- Traversable.sequence $ IntMap.mapWithKey f $ edges g
+    return g {edges = es}
 
 fromListEither :: (a -> a -> a) -> (b -> b -> b) -> [(Int, Either a b)] -> IntMap (a,b)
 fromListEither fa fb as = IntMap.fromList [(i,(am IntMap.! i, bm IntMap.! i)) | i <- is]
@@ -349,21 +272,21 @@ fromListEither fa fb as = IntMap.fromList [(i,(am IntMap.! i, bm IntMap.! i)) | 
     bm = IntMap.fromListWith fb [(i,b) | (i, Right b) <- as]
 
 
-runRewriteGraph :: forall f g u d . (Traversable f, Functor g, Traversable g)
+runRewriteDag :: forall f g u d . (Traversable f, Functor g, Traversable g)
     => (d -> d -> d)       -- ^ Resolution of downwards state
     -> Syn'    f (u, d) u  -- ^ Bottom-up state propagation
     -> Inh'    f (u, d) d  -- ^ Top-down state propagation
     -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
     -> (u -> d)            -- ^ Initial top-down state
-    -> Graph f             -- ^ Original term
-    -> (u, Graph g)        -- ^ Final state and rewritten term
-runRewriteGraph res up down rew dinit g = (uFin,appCxtGraph gg) where
+    -> Dag f             -- ^ Original term
+    -> (u, Dag g)        -- ^ Final state and rewritten term
+runRewriteDag res up down rew dinit g = (uFin,appCxtDag gg) where
     dFin    = dinit uFin
-    uFin    = fst $ env $ _root g
-    (gg,ws) = runWriter $ mapGraphM rewNode g
-    ws'     = (_root g, Right dFin) : ws
+    uFin    = fst $ env $ root g
+    (gg,ws) = runWriter $ mapDagM rewNode g
+    ws'     = (root g, Right dFin) : ws
     env n   = fromListEither errUp res ws' IntMap.! n
-    errUp   = error "runRewriteGraph1: over-constrained bottom-up state"
+    errUp   = error "runRewriteDag1: over-constrained bottom-up state"
 
     rewNode :: Node -> f Node -> Writer [(Node, Either u d)] (Free g Node)
     rewNode n f = do
@@ -375,56 +298,31 @@ runRewriteGraph res up down rew dinit g = (uFin,appCxtGraph gg) where
         ?above = env n
         ?below = env
 
--- -- For reference, runUpState from compdata
--- runUpState1 :: Functor f => UpState f q -> Term f -> q
--- runUpState1 up = go
---   where
---     go = up . fmap go . unTerm
-
--- -- No memoization
--- runUpStateGraph1 :: Functor f => UpState f q -> Graph f -> q
--- runUpStateGraph1 up g = go (_root g)
---   where
---     go = up . fmap go . (graphEdges g IntMap.!)
-
--- -- With memoization
--- runUpStateGraph :: Functor f => UpState f q -> Graph f -> q
--- runUpStateGraph up g = goMem (_root g)
---   where
---     states = IntMap.mapWithKey (\n _ -> go n) $ graphEdges g
---     goMem  = (states IntMap.!)
---     go     = up . fmap goMem . (graphEdges g IntMap.!)
-
--- -- With memoization (fewer lookups)
--- runUpStateGraphAlt :: Functor f => UpState f q -> Graph f -> q
--- runUpStateGraphAlt up g = states IntMap.! _root g
---   where
---     states = fmap (up . fmap (states IntMap.!)) (graphEdges g)
 
 -- | Run a bottom-up state automaton over a graph, resulting in a map containing the up state for
 -- each node. The global environment must be defined for all nodes in the graph.
-runSynGraph
+runSynDag
     :: Syn' f (u,d) u  -- Bottom-up state propagation
     -> (Node -> (u,d))     -- Global environment containing the state of each node
-    -> Graph f
+    -> Dag f
     -> IntMap u
-runSynGraph up env = IntMap.mapWithKey (\n -> explicit up (env n) env) . graphEdges
+runSynDag up env = IntMap.mapWithKey (\n -> explicit up (env n) env) . edges
 
 -- | Run a top-down state automaton over a graph, resulting in a map containing the down state for
 -- each node. The global environment must be defined for all nodes in the graph.
-runInhGraph :: forall f u d . Traversable f
+runInhDag :: forall f u d . Traversable f
     => (d -> d -> d)         -- Resolution of top-down state
     -> Inh' f (u,d) d  -- Top-down state propagation
     -> d                     -- Initial top-down state
     -> (Node -> (u,d))       -- Global environment containing the state of each node
-    -> Graph f
+    -> Dag f
     -> IntMap d
-runInhGraph res down d env g = IntMap.fromListWith res
-    $ ((_root g, d):)
+runInhDag res down d env g = IntMap.fromListWith res
+    $ ((root g, d):)
     $ concatMap (uncurry downNode)
     $ IntMap.toList
     $ fmap number
-    $ graphEdges g
+    $ edges g
   where
     downNode :: (Functor f, Foldable f) => Node -> f (Numbered Node) -> [(Node,d)]
     downNode n f = Foldable.toList $ fmap (\(Numbered i a) -> (a, lookupNumMap (snd $ env n) i dm)) f
@@ -432,32 +330,32 @@ runInhGraph res down d env g = IntMap.fromListWith res
         dm = explicit down (env n) (env . unNumbered) f
 
 -- | Run a bidirectional state automaton over a term graph
-runAGGraph :: Traversable f
+runAGDag :: Traversable f
     => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
     -> (u -> d)        -- ^ Initial top-down state
-    -> Graph f
+    -> Dag f
     -> u
-runAGGraph res up down dinit g = uFin where
-    uFin  = envU IntMap.! _root g
+runAGDag res up down dinit g = uFin where
+    uFin  = envU IntMap.! root g
     dFin  = dinit uFin
-    envU  = runSynGraph up env g
-    envD  = runInhGraph res down dFin env g
+    envU  = runSynDag up env g
+    envD  = runInhDag res down dFin env g
     env n = (envU IntMap.! n, envD IntMap.! n)
 
 
 
--- | This is an alternative implementation of 'runAGGraph' that uses
+-- | This is an alternative implementation of 'runAGDag' that uses
 -- mutable vectors for caching intermediate values.
-runAGGraphST :: forall f d u .Traversable f
+runAGDagST :: forall f d u .Traversable f
     => (d -> d -> d)   -- ^ Resolution of top-down state
     -> Syn' f (u,d) u  -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d  -- ^ Top-down state propagation
     -> (u -> d)        -- ^ Initial top-down state
-    -> Graph f
+    -> Dag f
     -> u
-runAGGraphST res syn inh dinit g = uFin
+runAGDagST res syn inh dinit g = uFin
     where syn' :: SynExpl f (u,d) u
           syn' = explicit syn
           inh' :: InhExpl f (u,d) d
@@ -465,20 +363,20 @@ runAGGraphST res syn inh dinit g = uFin
           dFin = dinit uFin
           uFin = runST runM
           runM :: ST s u
-          runM = mdo dmap <- MVec.new (_next g)
+          runM = mdo dmap <- MVec.new (nodeCount g)
                      MVec.set dmap Nothing
-                     MVec.unsafeWrite dmap (_root g) (Just dFin)
-                     umap <- MVec.new (_next g)
+                     MVec.unsafeWrite dmap (root g) (Just dFin)
+                     umap <- MVec.new (nodeCount g)
                      count <- newSTRef 0
                      let iter (n, t) = runDownST res  syn' inh' umap dmap n
                                        (fromJust $ dmapFin Vec.! n) umapFin count t
-                     mapM_ iter (IntMap.toList $ _eqs g)
+                     mapM_ iter (IntMap.toList $ edges g)
                      dmapFin <- Vec.unsafeFreeze dmap
                      umapFin <- Vec.unsafeFreeze umap
-                     return (umapFin Vec.! _root g)
+                     return (umapFin Vec.! root g)
 
 
--- | Auxiliary function for 'runAGGraphST'.
+-- | Auxiliary function for 'runAGDagST'.
 runDownST :: forall f u d s . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
        -> Vec.MVector s u -> Vec.MVector s (Maybe d) -> Node
      -> d -> Vec.Vector u -> STRef s Int -> f Node -> ST s ()
@@ -504,18 +402,18 @@ runDownST res syn inh ref' ref n d umap count t =
                    return ()
 
 
-runRewriteGraphST :: forall f g d u .(Traversable f, Traversable g)
+runRewriteDagST :: forall f g d u .(Traversable f, Traversable g)
     => (d -> d -> d)       -- ^ Resolution of top-down state
     -> Syn' f (u,d) u      -- ^ Bottom-up state propagation
     -> Inh' f (u,d) d      -- ^ Top-down state propagation
     -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
     -> (u -> d)            -- ^ Initial top-down state
-    -> Graph f
-    -> (u, Graph g)
-runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} = result where
+    -> Dag f
+    -> (u, Dag g)
+runRewriteDagST res syn inh rewr dinit Dag {edges=eqs,root=root,nodeCount=next} = result where
     result@(uFin,_) = runST runM
     dFin = dinit uFin
-    runM :: forall s . ST s (u, Graph g)
+    runM :: forall s . ST s (u, Dag g)
     runM = mdo
       dmap <- MVec.new next
       MVec.set dmap Nothing
@@ -523,13 +421,13 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
       umap <- MVec.new next
       count <- newSTRef 0
       allEqs <- MVec.new next
-      let iter (node,s) = do 
+      let iter (node,s) = do
              let d = fromJust $ dmapFin Vec.! node
              (u,t) <- run d s
-             MVec.unsafeWrite umap node u 
+             MVec.unsafeWrite umap node u
              MVec.unsafeWrite allEqs node t
           run :: d -> f Node -> ST s (u, Free g Node)
-          run d t = mdo 
+          run d t = mdo
              let u = explicit syn (u,d) (fst . unNumbered) result
                  m = explicit inh (u,d) (fst . unNumbered) result
                  run' :: Node -> ST s (Numbered ((u,d), Node))
@@ -556,7 +454,7 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
       newNodes :: Vec.MVector s (Maybe Int) <- MVec.new next
       MVec.set newNodes Nothing
 
-      let build node = do 
+      let build node = do
              mnewNode <- MVec.unsafeRead newNodes node
              case mnewNode of
                Just newNode -> return newNode
@@ -564,7 +462,7 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
                    newNode <- flatten (allEqsFin Vec.! node)
                    MVec.unsafeWrite newNodes node (Just newNode)
                    return newNode
-          flatten (Ret n) = do 
+          flatten (Ret n) = do
                        newNode <- build n
                        return newNode
           flatten (In f) = do
@@ -576,4 +474,4 @@ runRewriteGraphST res syn inh rewr dinit Graph {_eqs=eqs,_root=root,_next=next} 
       root' <- build root
       eqs' <- readSTRef eqsref
       next' <- readSTRef nodeCount
-      return (umapFin Vec.! root, Graph {_eqs = eqs', _root = root', _next = next'})
+      return (umapFin Vec.! root, Dag {edges = eqs', root = root', nodeCount = next'})

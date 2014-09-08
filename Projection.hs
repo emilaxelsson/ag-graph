@@ -49,7 +49,3 @@ type (e :< p) = GetPointer (Elem e p) e p
 
 pr :: forall e p . (e :< p) => p -> e
 pr p = pr' (pointer :: Pointer (Elem e p) e p) p
-
-
-example :: (Int,((Bool,[Int]),Int)) -> Bool
-example = pr

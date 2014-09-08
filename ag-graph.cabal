@@ -11,7 +11,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:
     AG,
-    Graph,
+    Dag,
     Paper
 
   build-depends:
