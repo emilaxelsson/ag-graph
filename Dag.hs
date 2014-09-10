@@ -128,28 +128,40 @@ runAGDag :: forall f d u .Traversable f
     -> (u -> d)         -- ^ Initial top-down state
     -> Dag f
     -> u
-runAGDag res syn inh dinit g = uFin where
-    uFin = umapFin IntMap.! root g
-    dFin = dinit uFin
-    run :: d -> Free f Node -> (u, IntMap d)
-    run d (Ret x) = (umapFin IntMap.! x, IntMap.singleton x d)
-    run d (In t)  = (u, dmapLoc) where
-        u = explicit syn (u,d) unNumbered result
-        m = explicit inh (u,d) unNumbered result
-        (result, (dmapLoc,_)) = runState (Traversable.mapM run' t) (IntMap.empty,0)
-        run' :: Free f Node -> State (IntMap d, Int) (Numbered ((u,d)))
-        run' s = do
-            (oldDmap,i) <- get
-            let d' = lookupNumMap d i m
-                (u',dmap') = run d' s
-            let j = i+1
-            j `seq` put (IntMap.unionWith res dmap' oldDmap, j)
-            return (Numbered i (u',d'))
-    dmapFin = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2) 
-           (IntMap.singleton (root g) dFin) result
-    umapFin = IntMap.map fst result
-    result = IntMap.mapWithKey (\ n t -> run (dmapFin IntMap.! n) t) (edges g)
+runAGDag res syn inh dinit g = u
+    where d = dinit u
+          syn' :: SynExpl f (u,d) u
+          syn' = explicit syn
+          inh' :: InhExpl f (u,d) d
+          inh' = explicit inh
+          run = free res  syn' inh'
+          (u,dmapRoot) = run d umap (root g)
+          dmap = IntMap.foldr (\ (_,m1) m2 -> IntMap.unionWith res m1 m2)
+                 dmapRoot result
+          umap = IntMap.map fst result
+          result = IntMap.mapWithKey (\ n t -> run (dmap IntMap.! n) umap t) (edges g)
 
+
+-- | Auxiliary function for 'runAGDag'.
+
+free :: forall f u d . Traversable f => (d -> d -> d) -> SynExpl f (u,d) u -> InhExpl f (u,d) d
+     -> d -> IntMap u -> f (Free f Node) -> (u, IntMap d)
+free res syn inh d umap s = run d s where
+    run :: d -> f (Free f Node) -> (u, IntMap d)
+    run d t = (u, dmap)
+        where u = syn (u,d) unNumbered result
+              m = inh (u,d) unNumbered result
+              (result, (dmap,_)) = runState (Traversable.mapM run' t) (IntMap.empty,0)
+              run' :: Free f Node -> State (IntMap d, Int) (Numbered ((u,d)))
+              run' s = do
+                  (oldDmap,i) <- get
+                  let d' = lookupNumMap d i m
+                      (u',dmap') = runF d' s
+                  put (IntMap.unionWith res dmap' oldDmap, (i+1))
+                  return (Numbered i (u',d'))
+    runF :: d -> Free f Node -> (u, IntMap d)
+    runF d (Ret x) = (umap IntMap.! x, IntMap.singleton x d)
+    runF d (In t)  = run d t
 
 -- | This function runs an attribute grammar on a dag. The result is
 -- the (combined) synthesised attribute at the root of the dag.
