@@ -21,15 +21,24 @@ import qualified Data.Map as Map
 import Data.Traversable (Traversable)
 
 import AG
-import Graph
+import Dag
 import Paper (Name, trueIntersection)
 
-
+import System.IO.Unsafe
 
 data ExpF a = LitB' Bool | LitI' Int | Var' Name
             | Eq' a a    | Add' a a  | If' a a a
             | Let' Name a a  -- `Let v x y` means "let v be x in y"
   deriving (Eq, Show, Functor, Foldable, Traversable)
+
+iLet n x y = In (Let' n x y)
+iIf b x y = In (If' b x y)
+iEq x y = In (Eq' x y)
+iAdd x y = In (Add' x y)
+iVar x = In (Var' x)
+iLitI l = In (LitI' l)
+iLitB l = In (LitB' l)
+
 
 type Size = Maybe Int
 type Env  = Map Name Size
@@ -55,26 +64,23 @@ sizeInfS (Let' v a b) = sizeOf b
 
 sizeInfI :: (Size :< atts) => Inh ExpF atts Env
 sizeInfI (Let' v a b) = b |-> Map.insert v (sizeOf a) above
-sizeInfI _            = Map.empty
+sizeInfI _            = o
 
 sizeInf :: Env -> Tree ExpF -> Size
-sizeInf = runAG sizeInfS sizeInfI
+sizeInf env = runAG sizeInfS sizeInfI (\ _ -> env)
 
-sizeInfG :: Env -> Graph ExpF -> Size
-sizeInfG = runAGGraph trueIntersection sizeInfS sizeInfI
+sizeInfG :: Env -> Dag ExpF -> Size
+sizeInfG env = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> env)
 
 -- let x = a+10 in if a==10 then x+10 else x
-g1 = mkGraph 0
-    [ (0, Let' "x" 1 4)
-    , (1, Add' 2 3)
-    , (2, Var' "a") -- free
-    , (3, LitI' 10)
-    , (4, If' 5 6 7)
-    , (5, Eq' 2 3)
-    , (6, Add' 7 3)
-    , (7, Var' "x")
-    ]
+t1 = iLet "x" (a `iAdd` ten)
+     (iIf (a `iEq` ten) (x `iAdd` ten) x)
+         where a = iVar "a"
+               ten = iLitI 10
+               x = iVar "x"
+
+g1 = unsafePerformIO $ reifyDag t1
 
 test1  = sizeInfG (Map.fromList [("a", Just 20)]) g1
-test1T = sizeInf  (Map.fromList [("a", Just 20)]) $ unravelGraph g1
+test1T = sizeInf  (Map.fromList [("a", Just 20)]) $ unravelDag g1
 

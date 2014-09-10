@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -29,16 +31,24 @@ import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
-import Data.List
+
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, Traversable)
 
-import Graph
-import Paper
+import AG
+import DagSimple
+import System.IO.Unsafe
 
+
+type  Name = String
+
+data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
+             |  Eq' a a      |  Add' a a   |  If' a a a
+             |  Iter' Name a a a
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 
 data (f :&: ann) a = f a :&: ann
@@ -87,7 +97,7 @@ tellVar v = tell (IntMap.empty, Set.singleton v)
 deleteVar :: MonadWriter Wr m => Name -> m a -> m a
 deleteVar v = censor $ \(ns, vs) -> (ns, Set.delete v vs)
 
-decorVarsM :: Graph ExpF -> Node -> State (IntMap ((ExpF :&: Set Name) Node)) (Set Name)
+decorVarsM :: Dag ExpF -> Node -> State (IntMap ((ExpF :&: Set Name) Node)) (Set Name)
 decorVarsM g n = do
     ns <- get
     case IntMap.lookup n ns of
@@ -106,17 +116,17 @@ decorVarsM g n = do
               modify (IntMap.insert n (f :&: vs))
               return vs
   where
-    f = graphEdges g IntMap.! n
+    f = edges g IntMap.! n
 
 -- | Decorate each node with the set of free variables in the corresponding sub-expression
-decorVars :: Graph ExpF -> Graph (ExpF :&: Set Name)
-decorVars g = g { _eqs = execState (decorVarsM g (_root g)) IntMap.empty }
+decorVars :: Dag ExpF -> Dag (ExpF :&: Set Name)
+decorVars g = g { edges = execState (decorVarsM g (root g)) IntMap.empty }
 
-renameM :: Graph (ExpF :&: Set Name) -> Aliases -> Node -> WriterT Wr (State St) Node
+renameM :: Dag (ExpF :&: Set Name) -> Aliases -> Node -> WriterT Wr (State St) Node
 renameM g aliases n
-    | Nothing <- IntMap.lookup n (_eqs g) = error $ "rename: node " ++ show n ++ " not in the graph"
+    | Nothing <- IntMap.lookup n (edges g) = error $ "rename: node " ++ show n ++ " not in the graph"
 renameM g aliases n = do
-    let f :&: vs = graphEdges g IntMap.! n
+    let f :&: vs = edges g IntMap.! n
         aliases' = [(v,v') | (v,v') <- aliases, v `Set.member` vs]
     memo <- getMemo
     case Map.lookup (n,aliases') memo of
@@ -139,11 +149,11 @@ renameM g aliases n = do
         return $ Iter' v' k' i' b'
     go aliases' f = traverse (renameM g aliases') f
 
-rename :: Graph ExpF -> Graph ExpF
-rename g = g {_root = 0, _eqs = es}
+rename :: Dag ExpF -> Dag ExpF
+rename g = g {root = 0, edges = es}
   where
     g' = decorVars g
-    ((es,_),(_,_,memo)) = flip runState (0,0,Map.empty) $ execWriterT $ renameM g' [] (_root g')
+    ((es,_),(_,_,memo)) = flip runState (0,0,Map.empty) $ execWriterT $ renameM g' [] (root g')
 
 
 
@@ -170,8 +180,8 @@ alphaEq = alphaEq' []
 
 -- | List the variable occurrences along with their scopes. Each variable in the scope is paired
 -- with the node at which it is bound.
-scope :: Graph ExpF -> [(Name,Node)] -> Node -> [(Name, [(Name,Node)])]
-scope g env n = case graphEdges g IntMap.! n of
+scope :: Dag ExpF -> [(Name,Node)] -> Node -> [(Name, [(Name,Node)])]
+scope g env n = case edges g IntMap.! n of
     Var' v -> [(v,env)]
     Iter' v k i b -> scope g env k ++ scope g env i ++ scope g ((v,n):[vn | vn <- env, fst vn /= v]) b
     f -> concat $ Foldable.toList $ fmap (scope g env) f
@@ -188,14 +198,14 @@ checkVar :: [(Name,Node)] -> Bool
 checkVar = all allEq . groups
 
 -- | Check for well-scopedness according to the paper
-isWellScoped :: Graph ExpF -> Bool
+isWellScoped :: Dag ExpF -> Bool
 isWellScoped g = all checkVar $ fmap concat $ groups sc
   where
-    sc = scope g [] (_root g)
+    sc = scope g [] (root g)
 
-prop_rename1 g = unravelGraph g `alphaEq` unravelGraph (rename g)
+prop_rename1 g = unravelDag g `alphaEq` unravelDag (rename g)
 
-prop_rename2 g = length (IntMap.toList $ graphEdges g) <= length (IntMap.toList $ graphEdges $ rename g)
+prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename g)
 
 prop_rename3 g = isWellScoped $ rename g
 
@@ -206,3 +216,37 @@ main = if ok then putStrLn "All tests passed" else putStrLn "Failed"
       && all prop_rename2 gs
       && all prop_rename3 gs
 
+
+iIter n x y z = In (Iter' n x y z)
+iAdd x y = In (Add' x y)
+iVar x = In (Var' x)
+iLitI l = In (LitI' l)
+iLitB l = In (LitB' l)
+
+
+gt1 :: Tree ExpF
+gt1 = iIter "x" x x (iAdd (iIter "y" z z (iAdd z y)) y)
+    where x = iLitI 10
+          y = iVar "x"
+          z = iLitI 5
+
+g1 :: Dag ExpF
+g1 = unsafePerformIO $ reifyDag gt1
+
+gt2 :: Tree ExpF
+gt2 = iIter "x" x (iIter "x" x x y) y
+    where x = iLitI 0
+          y = iVar "x"
+
+g2 :: Dag ExpF
+g2 = unsafePerformIO $ reifyDag gt2
+
+
+gt3 :: Tree ExpF
+gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
+    where x = iLitI 10
+          y = iLitB False
+          z = iVar "x"
+
+g3 :: Dag ExpF
+g3 = unsafePerformIO $ reifyDag gt3
