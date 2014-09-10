@@ -95,12 +95,11 @@ linearDag n = Dag.mkDag (Node (Ret 0) (Ret 0))  $
 -- efficiency of the run functions themselves.
 --
 -- The benchmark is run with different AG implementations and dag
--- representations. The suffix "F" indicates that the dag
--- representation from "DagFree" is used. The suffix "ST" indicates
--- that the mutable vector implementation is used. The suffix "FNE"
--- indicates that the dag representation from "DagFreeNonEmpty" is
--- used. The benchmarks mentioned in the paper use the mutable vector
--- implementation.
+-- representations. The names of the benchmarks use "Dag", "Free" and
+-- "Simple" to indicate that they use the "Dag", "DagFree" and
+-- "DagSimple" module, respectively. The suffix "ST" indicates that
+-- the mutable vector implementation is used. The benchmarks mentioned
+-- in the paper use the mutable vector implementation.
 
 
 newtype Value = Value Int deriving (Eq, Ord, Show, Num, Enum)
