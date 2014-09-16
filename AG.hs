@@ -1,4 +1,7 @@
 {-# LANGUAGE CPP                    #-}
+{-# LANGUAGE DeriveFunctor          #-}
+{-# LANGUAGE DeriveFoldable         #-}
+{-# LANGUAGE DeriveTraversable      #-}
 {-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs                  #-}
@@ -36,50 +39,16 @@ import Control.Monad.State.Strict
 
 
 
-data Free f a = In (f (Free f a))
-              | Ret a
+data Free f a
+  = In (f (Free f a))
+  | Ret a
+  deriving (Functor, Foldable, Traversable)
 
 deriving instance Show (f (Tree f)) => Show (Tree f)
 
 
 simpCxt :: Functor f => f a -> Free f a
 simpCxt = In . fmap Ret
-
-instance Functor f => Functor (Free f) where
-    fmap f (Ret x) = Ret (f x)
-    fmap f (In t) = In (fmap (fmap f) t)
-
-instance Foldable f => Foldable (Free f) where
-    foldr op c a = run a c
-        where run (Ret a) e = a `op` e
-              run (In t) e = Foldable.foldr run e t
-
-    foldl op = run
-        where run e (Ret a) = e `op` a
-              run e (In t) = Foldable.foldl run e t
-
-    fold (Ret a) = a
-    fold (In t) = Foldable.foldMap Foldable.fold t
-
-    foldMap f = run
-        where run (Ret a) = f a
-              run (In t) = Foldable.foldMap run t
-
-
-instance (Traversable f) => Traversable (Free f) where
-    traverse f = run
-        where run (Ret a) = Ret <$> f a
-              run (In t) = In <$> Traversable.traverse run t
-
-    sequenceA (Ret a) = Ret <$> a
-    sequenceA (In t) = In <$> Traversable.traverse Traversable.sequenceA t
-
-    mapM f = run
-        where run (Ret a) = liftM Ret $ f a
-              run (In t) = liftM In $ Traversable.mapM run t
-
-    sequence (Ret a) = liftM Ret a
-    sequence (In t) = liftM In $ Traversable.mapM Traversable.sequence t
 
 
 instance Functor f => Monad (Free f) where
@@ -145,7 +114,7 @@ instance Mapping (NumMap k) (Numbered k) where
     Numbered k _ |-> v = NumMap $ IntMap.singleton k v
     o = NumMap IntMap.empty
 
-    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.mergeWithKey merge 
+    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.mergeWithKey merge
                                           (IntMap.map (,q)) (IntMap.map (p,)) mp mq
       where merge _ p q = Just (p,q)
 
@@ -155,7 +124,7 @@ instance Mapping IntMap Int where
     (|->) = IntMap.singleton
     o = IntMap.empty
 
-    prodMap p q mp mq = IntMap.mergeWithKey merge 
+    prodMap p q mp mq = IntMap.mergeWithKey merge
                         (IntMap.map (,q)) (IntMap.map (p,)) mp mq
       where merge _ p q = Just (p,q)
 
@@ -227,7 +196,7 @@ prodInh sp sq t = prodMap above above (sp t) (sq t)
 runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> (u -> d) -> Tree f -> u
 runAG up down dinit t = uFin where
     dFin = dinit uFin
-    uFin = run dFin t 
+    uFin = run dFin t
     run d (In t) = u where
         t' = fmap bel $ number t
         bel (Numbered i s) =
