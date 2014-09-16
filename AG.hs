@@ -63,18 +63,25 @@ simpCxt :: Functor f => f a -> Free f a
 simpCxt = In . fmap Ret
 
 
+-- * Closed term trees.
+
+-- | Empty type.
 data Zero
-type Tree g = Free g Zero
-
 deriving instance Show Zero
-deriving instance Show (f (Tree f)) => Show (Tree f)
 
-freeTree :: Functor f => Tree f -> Free f a
-freeTree (In f) = In (fmap freeTree f)
-freeTree (Ret x) = Ret (zero x)
-
+-- | Empty type elimination.
 zero :: Zero -> a
 zero _ = error "zero"
+
+-- | Trees over functor @f@.
+--   Or: closed terms over functor @f@ (no variables).
+type Tree f = Free f Zero
+deriving instance Show (f (Tree f)) => Show (Tree f)
+
+-- | Embedding closed terms into open terms.
+freeTree :: Functor f => Tree f -> Free f a
+freeTree = fmap zero
+
 
 -- | This type is used for numbering components of a functorial value.
 data Numbered a = Numbered
