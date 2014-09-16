@@ -44,8 +44,6 @@ data Free f a
   | Ret a
   deriving (Functor, Foldable, Traversable)
 
-deriving instance Show (f (Tree f)) => Show (Tree f)
-
 instance Functor f => Monad (Free f) where
     return      = Ret
     Ret x >>= f = f x
@@ -55,12 +53,11 @@ simpCxt :: Functor f => f a -> Free f a
 simpCxt = In . fmap Ret
 
 
-
 data Zero
+type Tree g = Free g Zero
 
 deriving instance Show Zero
-
-type Tree g = Free g Zero
+deriving instance Show (f (Tree f)) => Show (Tree f)
 
 freeTree :: Functor f => Tree f -> Free f a
 freeTree (In f) = In (fmap freeTree f)
