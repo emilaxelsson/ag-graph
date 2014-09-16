@@ -139,29 +139,32 @@ class Mapping m k | m -> k where
     prodMap :: v1 -> v2 -> m v1 -> m v2 -> m (v1, v2)
 
 
-newtype NumMap k v = NumMap {unNumMap :: IntMap v}
-
-lookupNumMap :: a -> Int -> NumMap t a -> a
-lookupNumMap d k (NumMap m) = IntMap.findWithDefault d k m
-
-instance Mapping (NumMap k) (Numbered k) where
-    NumMap m1 & NumMap m2 = NumMap (IntMap.union m1 m2)
-    Numbered k _ |-> v = NumMap $ IntMap.singleton k v
-    o = NumMap IntMap.empty
-
-    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ IntMap.mergeWithKey merge
-                                          (IntMap.map (,q)) (IntMap.map (p,)) mp mq
-      where merge _ p q = Just (p,q)
-
-
+-- | 'IntMap v' is a 'Mapping' from 'Int' to @v@.
 instance Mapping IntMap Int where
-    (&) = IntMap.union
+    (&)   = IntMap.union
     (|->) = IntMap.singleton
-    o = IntMap.empty
+    o     = IntMap.empty
 
     prodMap p q mp mq = IntMap.mergeWithKey merge
                         (IntMap.map (,q)) (IntMap.map (p,)) mp mq
       where merge _ p q = Just (p,q)
+
+-- | 'NumMap t v' is a mapping from 'Numbered t' to @v@.
+--   Note that @t@ is phantom type argument used to establish the
+--   functional dependency @NumMap t v -> Numbered t@.
+--   The actual map is from the unique 'Int' labels in @Numbered t@
+--   to @v@.
+newtype NumMap t v = NumMap {unNumMap :: IntMap v}
+
+instance Mapping (NumMap t) (Numbered t) where
+    NumMap m1 & NumMap m2 = NumMap $ m1 & m2
+    Numbered k _t |-> v   = NumMap $ k |-> v
+    o                     = NumMap $ o
+
+    prodMap p q (NumMap mp) (NumMap mq) = NumMap $ prodMap p q mp mq
+
+lookupNumMap :: v -> Int -> NumMap t v -> v
+lookupNumMap d k (NumMap m) = IntMap.findWithDefault d k m
 
 
 -- * Attribute grammars.
