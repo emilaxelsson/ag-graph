@@ -170,13 +170,13 @@ lookupNumMap d k (NumMap m) = IntMap.findWithDefault d k m
 -- * Attribute grammars.
 
 -- | This function provides access to components of the states from
--- "below".
+--   "below" (i.e., the child nodes).
 
 below :: (?below :: a -> q, p :< q) => a -> p
 below = pr . ?below
 
 -- | This function provides access to components of the state from
--- "above"
+--   "above" (i.e., the parent nodes).
 
 above :: (?above :: q, p :< q) => p
 above = pr ?above
