@@ -38,6 +38,7 @@ import ProjectionSimple as Projection
 #endif
 
 for = flip fmap
+(<&>) = for
 
 data Free f a
   = In (f (Free f a))
@@ -81,14 +82,22 @@ data Numbered a = Numbered
   , unNumbered :: a
   }
 
+-- | Return the current state and modify it.
+strictModifyReturningOld :: MonadState s m => (s -> s) -> m s
+strictModifyReturningOld f = do
+  old <- get
+  let new = f old
+  new `seq` put new
+  return old
+
+-- | Return the current @Int@ state and increase it.
+tick :: MonadState Int m => m Int
+tick = strictModifyReturningOld (+1)
+
 -- | This function numbers the components of the given functorial
 -- value with consecutive integers starting at 0.
 number :: Traversable f => f a -> f (Numbered a)
-number x = fst $ runState (Traversable.mapM run x) 0 where
-  run b = do n <- get
-             let m = n+1
-             m `seq` put m
-             return $ Numbered n b
+number t = Traversable.forM t (\ b -> tick <&> (`Numbered` b)) `evalState` 0
 
 infix 1 |->
 infixr 0 &
