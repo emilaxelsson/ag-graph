@@ -76,11 +76,10 @@ zero :: Zero -> a
 zero _ = error "zero"
 
 -- | This type is used for numbering components of a functorial value.
-data Numbered a = Numbered Int a
-
-unNumbered :: Numbered a -> a
-unNumbered (Numbered _ x) = x
-
+data Numbered a = Numbered
+  { theNumber  :: Int
+  , unNumbered :: a
+  }
 
 -- | This function numbers the components of the given functorial
 -- value with consecutive integers starting at 0.
