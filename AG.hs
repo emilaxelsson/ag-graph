@@ -44,6 +44,15 @@ data Free f a
   | Ret a
   deriving (Functor, Foldable, Traversable)
 
+instance Functor f => Applicative (Free f) where
+  pure    = Ret
+  Ret f <*> a = f <$> a
+  In  t <*> a = In $ for t (<*> a)
+  -- f <*> a = do
+  --   f' <- f
+  --   a' <- a
+  --   return $ f' a'
+
 instance Functor f => Monad (Free f) where
     return      = Ret
     Ret x >>= f = f x
