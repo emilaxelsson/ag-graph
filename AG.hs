@@ -37,9 +37,16 @@ import Projection
 import ProjectionSimple as Projection
 #endif
 
+-- * More notations for functorial action.
+
 for = flip fmap
 (<&>) = for
 
+
+-- * Term trees as free monad over a signature functor.
+
+-- | Free monad over functor @f@.
+--   Or: the terms over signature @f@ and variables in @a@.
 data Free f a
   = In (f (Free f a))
   | Ret a
@@ -59,6 +66,7 @@ instance Functor f => Monad (Free f) where
     Ret x >>= f = f x
     In t  >>= f = In $ for t (>>= f)
 
+-- | Creating a shallow term (all direct subterms are variables).
 simpCxt :: Functor f => f a -> Free f a
 simpCxt = In . fmap Ret
 
@@ -83,6 +91,8 @@ freeTree :: Functor f => Tree f -> Free f a
 freeTree = fmap zero
 
 
+-- * Numbering nodes in a syntax tree.
+
 -- | This type is used for numbering components of a functorial value.
 data Numbered a = Numbered
   { theNumber  :: Int
@@ -106,10 +116,14 @@ tick = strictModifyReturningOld (+1)
 number :: Traversable f => f a -> f (Numbered a)
 number t = Traversable.forM t (\ b -> tick <&> (`Numbered` b)) `evalState` 0
 
+
+-- * Finite maps
+
 infix 1 |->
 infixr 0 &
 
 
+-- | Abstract interface to finite maps.
 class Mapping m k | m -> k where
     -- | left-biased union of two mappings.
     (&) :: m v -> m v -> m v
@@ -149,6 +163,8 @@ instance Mapping IntMap Int where
                         (IntMap.map (,q)) (IntMap.map (p,)) mp mq
       where merge _ p q = Just (p,q)
 
+
+-- * Attribute grammars.
 
 -- | This function provides access to components of the states from
 -- "below".
