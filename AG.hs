@@ -37,6 +37,7 @@ import Projection
 import ProjectionSimple as Projection
 #endif
 
+for = flip fmap
 
 data Free f a
   = In (f (Free f a))
@@ -45,15 +46,15 @@ data Free f a
 
 deriving instance Show (f (Tree f)) => Show (Tree f)
 
+instance Functor f => Monad (Free f) where
+    return      = Ret
+    Ret x >>= f = f x
+    In t  >>= f = In $ for t (>>= f)
 
 simpCxt :: Functor f => f a -> Free f a
 simpCxt = In . fmap Ret
 
 
-instance Functor f => Monad (Free f) where
-    return = Ret
-    (Ret x) >>= f = f x
-    (In t) >>= f = In (fmap (>>= f) t)
 
 data Zero
 
