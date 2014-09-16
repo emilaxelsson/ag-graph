@@ -274,15 +274,16 @@ runRewrite :: (Traversable f, Functor g) =>
            Syn' f (u,d) u -> Inh' f (u,d) d ->
            Rewrite f (u,d) g ->
            (u -> d) -> Tree f -> (u, Tree g)
-runRewrite up down trans dinit t = res where
-    dFin = dinit uFin
-    res@(uFin,_) = run dFin t
-    run d (In t) = (u,t'') where
-        t' = fmap bel $ number t
-        bel (Numbered i s) =
-            let d' = lookupNumMap d i m
-                (u', s') = run d' s
-            in Numbered i ((u', d'),s')
-        m = explicit down (u,d) (fst . unNumbered) t'
-        u = explicit up (u,d) (fst . unNumbered) t'
-        t'' = join $ fmap (snd . unNumbered) $ explicit trans (u,d) (fst . unNumbered) t'
+runRewrite up down trans dInit t = res
+  where
+    res@(uFin,_) = run (dInit uFin) t
+    run d (In t) = (u, t'')
+      where
+        t' = for (number t) $ \ (Numbered i s) ->
+               let d' = lookupNumMap d i m
+                   (u', s') = run d' s
+               in Numbered i ((u', d'), s')
+        m = explicit down  (u,d) (fst . unNumbered) t'
+        u = explicit up    (u,d) (fst . unNumbered) t'
+        r = explicit trans (u,d) (fst . unNumbered) t'
+        t'' = snd . unNumbered =<< r
