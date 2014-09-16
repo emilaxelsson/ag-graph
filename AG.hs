@@ -230,20 +230,39 @@ prodInh sp sq t = prodMap above above (sp t) (sq t)
 
 
 -- | This combinator combines a bottom-up and a top-down state
--- transformations. Both state transformations can depend mutually
--- recursive on each other.
+--   transformations. Both state transformations can depend mutually
+--   recursive on each other.
+--
+--   In @runAg up down dInit@,
+--
+--   @down@ corresponds to the action for the downwards traversal
+--   (computing the inherited attribute @d@),
+--
+--   @up@ corresponds to the action for the upwards traversal
+--   (computing the synthesized attribute @u@), and
+--
+--   @dInit@ is a method to compute the initial inherited attribute
+--   from the final synthesized attribute @uFinal@.
 
 runAG :: Traversable f => Syn' f (u,d) u -> Inh' f (u,d) d -> (u -> d) -> Tree f -> u
-runAG up down dinit t = uFin where
-    dFin = dinit uFin
-    uFin = run dFin t
-    run d (In t) = u where
-        t' = fmap bel $ number t
-        bel (Numbered i s) =
-            let d' = lookupNumMap d i m
-            in Numbered i (run d' s, d')
+runAG up down dInit t = uFinal
+  where
+    uFinal = run (dInit uFinal) t
+    run d (In t) = u
+      where
+        -- Replace the numbered subtrees of t by
+        -- a pair of synthesized and inherited value for this node.
+        -- The inherited value @d'@ is read from the map @m@ and defaults to @d@.
+        -- The synthesized value is computed by a recursive run, using the updated
+        -- inherited value.
+        t' = for (number t) $ \ (Numbered i s) ->
+               let d' = lookupNumMap d i m
+               in  Numbered i (run d' s, d')
+        -- The map @m@ of inherited values is computed from @t'@ by the @down@ function.
+        -- ?above = (u,d); ?below = unNumbered
         m = explicit down (u,d) unNumbered t'
-        u = explicit up (u,d) unNumbered t'
+        -- The result @u@ of the run on @t@ is computed by the @up@ function from o@t'@.
+        u = explicit up   (u,d) unNumbered t'
 
 
 
