@@ -1,6 +1,14 @@
-{-# LANGUAGE TypeFamilies, DataKinds, PolyKinds,
- UndecidableInstances, MultiParamTypeClasses, FlexibleInstances, 
- GADTs, FlexibleContexts, ScopedTypeVariables, TypeOperators, ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Projection (pr, (:<)) where
 
