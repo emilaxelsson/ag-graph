@@ -1,19 +1,20 @@
-{-# LANGUAGE CPP                    #-}
-{-# LANGUAGE DeriveFunctor          #-}
-{-# LANGUAGE DeriveFoldable         #-}
-{-# LANGUAGE DeriveTraversable      #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE GADTs                  #-}
-{-# LANGUAGE ImplicitParams         #-}
-{-# LANGUAGE IncoherentInstances    #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE Rank2Types             #-}
-{-# LANGUAGE StandaloneDeriving     #-}
-{-# LANGUAGE TupleSections          #-}
-{-# LANGUAGE TypeFamilies           #-}
-{-# LANGUAGE TypeOperators          #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE DeriveFoldable            #-}
+{-# LANGUAGE DeriveTraversable         #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE FunctionalDependencies    #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE ImplicitParams            #-}
+{-# LANGUAGE IncoherentInstances       #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE Rank2Types                #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 module AG
     ( module Projection
