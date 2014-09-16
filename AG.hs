@@ -20,23 +20,21 @@ module AG
     , module AG
     ) where
 
+import Control.Applicative
+import Control.Monad.State.Strict
+
+import Data.Foldable (Foldable)
+import qualified Data.Foldable as Foldable
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import Data.Traversable (Traversable)
+import qualified Data.Traversable as Traversable
+
 #if __GLASGOW_HASKELL__ > 706
 import Projection
 #else
 import ProjectionSimple as Projection
 #endif
-
-import Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
-import Data.Traversable (Traversable)
-import qualified Data.Traversable as Traversable
-import Data.Foldable (Foldable)
-import qualified Data.Foldable as Foldable
-import Control.Applicative
-
-
-import Control.Monad.State.Strict
-
 
 
 data Free f a
