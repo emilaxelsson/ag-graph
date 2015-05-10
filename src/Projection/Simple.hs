@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeOperators, MultiParamTypeClasses, FlexibleInstances, OverlappingInstances #-}
 
-module ProjectionSimple where
+module Projection.Simple where
 
 class a :< b where
     pr :: b -> a

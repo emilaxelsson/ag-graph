@@ -39,7 +39,8 @@ import qualified Data.Set as Set
 import Data.Traversable (traverse, Traversable)
 
 import AG
-import DagSimple
+import Dag.AG
+import Dag.Internal
 import System.IO.Unsafe
 
 
@@ -203,7 +204,7 @@ isWellScoped g = all checkVar $ fmap concat $ groups sc
   where
     sc = scope g [] (root g)
 
-prop_rename1 g = unravelDag g `alphaEq` unravelDag (rename g)
+prop_rename1 g = unravel g `alphaEq` unravel (rename g)
 
 prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename g)
 

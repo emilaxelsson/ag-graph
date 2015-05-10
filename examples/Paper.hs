@@ -22,7 +22,7 @@ import System.IO.Unsafe
 
 
 import AG
-import Dag
+import Dag.AG
 
 
 
@@ -317,16 +317,16 @@ repmin' :: Tree IntTreeF -> Tree IntTreeF
 repmin' = snd . runRewrite minS minI rep' init
   where init (MinS i) = MinI i
 
-repminG' :: Dag IntTreeF -> Dag IntTreeF
-repminG' = snd . runRewriteDagST const minS minI rep' init
-  where init (MinS i) = MinI i
+-- repminG' :: Dag IntTreeF -> Dag IntTreeF
+-- repminG' = snd . runRewriteDagST const minS minI rep' init
+--   where init (MinS i) = MinI i
 
 repminTestG1  = repminG i1
-repminTestG1' = repminG' i1
+-- repminTestG1' = repminG' i1
 repminTestT1  = repmin (unravelDag i1)
 
 repminTestG2  = repminG i2
-repminTestG2' = repminG' i2
+-- repminTestG2' = repminG' i2
 repminTestT2  = repmin (unravelDag i2)
 
 

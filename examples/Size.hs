@@ -21,7 +21,7 @@ import qualified Data.Map as Map
 import Data.Traversable (Traversable)
 
 import AG
-import Dag
+import Dag.AG
 import Paper (Name, trueIntersection)
 
 import System.IO.Unsafe
@@ -82,5 +82,5 @@ t1 = iLet "x" (a `iAdd` ten)
 g1 = unsafePerformIO $ reifyDag t1
 
 test1  = sizeInfG (Map.fromList [("a", Just 20)]) g1
-test1T = sizeInf  (Map.fromList [("a", Just 20)]) $ unravelDag g1
+test1T = sizeInf  (Map.fromList [("a", Just 20)]) $ unravel g1
 

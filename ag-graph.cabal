@@ -1,5 +1,5 @@
 name:                ag-graph
-version:             0.1
+version:             0.2
 synopsis:            Attribute grammars on graphs
 license:             BSD3
 license-file:        LICENSE
@@ -9,10 +9,20 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:
-    AG,
-    Dag,
-    Paper
+  hs-source-dirs:   src
+  Exposed-Modules:  AG
+                    PAG
+                    Dag
+                    Dag.AG
+                    Dag.PAG
+  Other-Modules:    Dag.Internal
+                    AG.Internal
+                    PAG.Internal
+                    Mapping
+                    Tree
+                    Projection
+                    PAG.Projection
+                    PAG.Product
 
   build-depends:
     base <5,
