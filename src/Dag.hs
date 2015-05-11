@@ -30,6 +30,7 @@ module Dag
     , bisim
     , iso
     , strongIso
+    , flatten
     ) where
 
 import Control.Applicative

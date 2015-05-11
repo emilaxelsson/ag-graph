@@ -4,22 +4,24 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 
--- | This module implements a renamer for graphs such that each binder introduces a unique variable
--- name.
+-- | This module implements a renamer for graphs such that each binder
+-- introduces a unique variable name.
 --
 -- The algorithm works as follows:
 --
--- * By default, the new graph is created by traversing the expression from the root and down,
---   copying nodes from the original graph and renaming binders (and corresponding variables) to be
---   unique.
+-- * By default, the new graph is created by traversing the expression from the
+--   root and down, copying nodes from the original graph and renaming binders
+--   (and corresponding variables) to be unique.
 --
--- * An exception is made when visiting a node that has already been copied under a compatible set
---   of renamings. In that case, a reference to the previous copy is used.
+-- * An exception is made when visiting a node that has already been copied
+--   under a compatible set of renamings. In that case, a reference to the
+--   previous copy is used.
 --
--- Without the exception, we would loose all sharing in the original graph (the new graph would
--- always be a tree). The exception makes sure that we retain sharing where possible. However, it is
--- generally not possible to retain all sharing, since shared sub-trees may appear in contexts with
--- incompatible renamings (see e.g. example @g3@ in Paper.hs).
+-- Without the exception, we would loose all sharing in the original graph (the
+-- new graph would always be a tree). The exception makes sure that we retain
+-- sharing where possible. However, it is generally not possible to retain all
+-- sharing, since shared sub-trees may appear in contexts with incompatible
+-- renamings (see e.g. example @g3@ in Paper.hs).
 
 module Rename where
 
@@ -41,10 +43,11 @@ import Data.Traversable (traverse, Traversable)
 import AG
 import Dag.AG
 import Dag.Internal
+import Dag
 import System.IO.Unsafe
 
 
-type  Name = String
+type Name = String
 
 data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
              |  Eq' a a      |  Add' a a   |  If' a a a
@@ -55,6 +58,16 @@ data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
 data (f :&: ann) a = f a :&: ann
   deriving (Eq, Show, Functor)
 
+getAnn :: (f :&: ann) a -> ann
+getAnn (_ :&: ann) = ann
+
+dropAnn :: (f :&: ann) a -> f a
+dropAnn (f :&: _) = f
+
+dropAnnFree :: Functor f => Free (f :&: ann) a -> Free f a
+dropAnnFree (In f)  = In $ fmap dropAnnFree $ dropAnn f
+dropAnnFree (Ret a) = Ret a
+
 -- | Variable aliasing environment
 type Aliases = [(Name,Name)]  -- [(oldName, newName)]
 
@@ -63,7 +76,7 @@ type Memo = Map (Node,Aliases) Node
 
 type VarId = Int
 
-type St = (Node,VarId,Memo)
+type St = (Node, VarId, Memo)
 
 freshNode :: MonadState St m => m Node
 freshNode = do
@@ -87,74 +100,104 @@ memorize n aliases n' = do
     (n_,v,memo) <- get
     put (n_, v, Map.insert (n,aliases) n' memo)
 
-type Wr = (IntMap (ExpF Node), Set Name)
+type Cxt f a = f (Free f a)
 
-tellNode :: MonadWriter Wr m => Node -> ExpF Node -> m ()
-tellNode n f = tell (IntMap.singleton n f, mempty)
+type Wr = IntMap (Cxt ExpF Node)
+
+tellNode :: MonadWriter Wr m => Node -> Cxt ExpF Node -> m ()
+tellNode n f = tell $ IntMap.singleton n f
 
 tellVar :: MonadWriter Wr m => Name -> m ()
-tellVar v = tell (IntMap.empty, Set.singleton v)
+tellVar v = tell IntMap.empty
 
-deleteVar :: MonadWriter Wr m => Name -> m a -> m a
-deleteVar v = censor $ \(ns, vs) -> (ns, Set.delete v vs)
-
-decorVarsM :: Dag ExpF -> Node -> State (IntMap ((ExpF :&: Set Name) Node)) (Set Name)
-decorVarsM g n = do
+decorVarsM'
+    :: Dag ExpF
+    -> Free ExpF Node  -- ^ Current focus
+    -> State
+        (IntMap (Cxt (ExpF :&: Set Name) Node))
+        (Free (ExpF :&: Set Name) Node, Set Name)
+decorVarsM' g (In f) = do
+    f' <- decorVarsM g f
+    return (In f', getAnn f')
+decorVarsM' g (Ret n) = do
     ns <- get
     case IntMap.lookup n ns of
-        Just (_ :&: vs) -> return vs
-        _ -> case f of
-          Var' v -> let vs = Set.singleton v in modify (IntMap.insert n (Var' v :&: vs)) >> return vs
-          Iter' v k i b -> do
-              k' <- decorVarsM g k
-              i' <- decorVarsM g i
-              b' <- decorVarsM g b
-              let vs = Set.unions [k', i', Set.delete v b']
-              modify (IntMap.insert n (Iter' v k i b :&: vs))
-              return vs
-          _ -> do
-              vs <- fmap (Set.unions . Foldable.toList) $ traverse (decorVarsM g) f
-              modify (IntMap.insert n (f :&: vs))
-              return vs
-  where
-    f = edges g IntMap.! n
+        Just h -> return (Ret n, getAnn h)
+        _ -> do
+            let f = edges g IntMap.! n
+            f' <- decorVarsM g f
+            modify (IntMap.insert n f')
+            return (Ret n, getAnn f')
 
--- | Decorate each node with the set of free variables in the corresponding sub-expression
+decorVarsM
+    :: Dag ExpF
+    -> Cxt ExpF Node  -- ^ Current focus
+    -> State
+        (IntMap (Cxt (ExpF :&: Set Name) Node))
+        (Cxt (ExpF :&: Set Name) Node)
+decorVarsM g (Var' v) = return (Var' v :&: Set.singleton v)
+decorVarsM g (Iter' v k i b) = do
+    (k',kvs) <- decorVarsM' g k
+    (i',ivs) <- decorVarsM' g i
+    (b',bvs) <- decorVarsM' g b
+    let vs = Set.unions [kvs, ivs, Set.delete v bvs]
+    return (Iter' v k' i' b' :&: vs)
+decorVarsM g f = do
+    f' <- traverse (decorVarsM' g) f
+    let vs = Set.unions . Foldable.toList $ fmap snd f'
+    return (fmap fst f' :&: vs)
+
+-- | Decorate each node with the set of free variables in the corresponding
+-- sub-expression
 decorVars :: Dag ExpF -> Dag (ExpF :&: Set Name)
-decorVars g = g { edges = execState (decorVarsM g (root g)) IntMap.empty }
+decorVars g = g {root = r', edges = es'}
+  where
+    (r',es') = runState (decorVarsM g (root g)) IntMap.empty
 
-renameM :: Dag (ExpF :&: Set Name) -> Aliases -> Node -> WriterT Wr (State St) Node
-renameM g aliases n
-    | Nothing <- IntMap.lookup n (edges g) = error $ "rename: node " ++ show n ++ " not in the graph"
-renameM g aliases n = do
-    let f :&: vs = edges g IntMap.! n
-        aliases' = [(v,v') | (v,v') <- aliases, v `Set.member` vs]
+renameM'
+    :: Dag (ExpF :&: Set Name)
+    -> Aliases
+    -> Free (ExpF :&: Set Name) Node  -- ^ Current focus
+    -> WriterT Wr (State St) (Free ExpF Node)
+renameM' g aliases (In f)  = fmap In $ renameM g aliases f
+renameM' g aliases (Ret n) = do
+    let f = edges g IntMap.! n
+        aliases' = [(v,v') | (v,v') <- aliases, v `Set.member` getAnn f]
     memo <- getMemo
     case Map.lookup (n,aliases') memo of
-        Just n' -> return n'
+        Just n' -> return $ Ret n'
         Nothing -> do
             n' <- freshNode
             memorize n aliases' n'
-            f' <- go aliases' f
+            f' <- renameM g aliases' f
             tellNode n' f'
-            return n'
-  where
-    go aliases' (Var' v) = case lookup v aliases' of
+            return $ Ret n'
+
+renameM
+    :: Dag (ExpF :&: Set Name)
+    -> Aliases
+    -> Cxt (ExpF :&: Set Name) Node  -- ^ Current focus
+    -> WriterT Wr (State St) (Cxt ExpF Node)
+renameM g aliases (f :&: vs) = case f of
+    Var' v -> case lookup v aliases of
         Just v' -> tellVar v' >> return (Var' v')
         _       -> tellVar v  >> return (Var' v)  -- Free variable
-    go aliases' (Iter' v k i b) = do
-        k' <- renameM g aliases' k
-        i' <- renameM g aliases' i
+    Iter' v k i b -> do
+        k' <- renameM' g aliases k
+        i' <- renameM' g aliases i
         v' <- freshName
-        b' <- deleteVar v' $ renameM g ((v,v'):aliases') b
+        b' <- renameM' g ((v,v'):aliases) b
         return $ Iter' v' k' i' b'
-    go aliases' f = traverse (renameM g aliases') f
+    _ -> traverse (renameM' g aliases) f
 
 rename :: Dag ExpF -> Dag ExpF
-rename g = g {root = 0, edges = es}
+rename g = g {root = r, edges = es, nodeCount = n}
   where
     g' = decorVars g
-    ((es,_),(_,_,memo)) = flip runState (0,0,Map.empty) $ execWriterT $ renameM g' [] (root g')
+    ((r,es),(n,_,_))
+        = flip runState (0,0,Map.empty)
+        $ runWriterT
+        $ renameM g' [] (root g')
 
 
 
@@ -179,13 +222,26 @@ alphaEq' env _ _ = False
 alphaEq :: Tree ExpF -> Tree ExpF -> Bool
 alphaEq = alphaEq' []
 
--- | List the variable occurrences along with their scopes. Each variable in the scope is paired
--- with the node at which it is bound.
-scope :: Dag ExpF -> [(Name,Node)] -> Node -> [(Name, [(Name,Node)])]
-scope g env n = case edges g IntMap.! n of
-    Var' v -> [(v,env)]
-    Iter' v k i b -> scope g env k ++ scope g env i ++ scope g ((v,n):[vn | vn <- env, fst vn /= v]) b
-    f -> concat $ Foldable.toList $ fmap (scope g env) f
+-- | Like 'flatten' but adds the root as a node in the graph
+flatten' :: Traversable f => Dag f -> (Node, IntMap (f Node), Int)
+flatten' d = (n, IntMap.insert n f m, n+1)
+  where
+    (f,m,n) = flatten d
+
+-- | List the variable occurrences along with their scopes. Each variable in the
+-- scope is paired with the node at which it is bound.
+scope :: Dag ExpF -> [(Name,Node)] -> [(Name, [(Name,Node)])]
+scope g env = go env r
+  where
+    (r,es,_) = flatten' g
+
+    go env n = case es IntMap.! n of
+      Var' v -> [(v,env)]
+      Iter' v k i b
+          -> go env k
+          ++ go env i
+          ++ go ((v,n):[vn | vn <- env, fst vn /= v]) b
+      f -> concat $ Foldable.toList $ fmap (go env) f
 
 groups :: Ord k => [(k,a)] -> [[a]]
 groups ks = Map.elems $ Map.fromListWith (++) [(k,[a]) | (k,a) <- ks]
@@ -202,9 +258,9 @@ checkVar = all allEq . groups
 isWellScoped :: Dag ExpF -> Bool
 isWellScoped g = all checkVar $ fmap concat $ groups sc
   where
-    sc = scope g [] (root g)
+    sc = scope g []
 
-prop_rename1 g = unravel g `alphaEq` unravel (rename g)
+prop_rename1 g = unravelDag g `alphaEq` unravelDag (rename g)
 
 prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename g)
 
@@ -219,10 +275,10 @@ main = if ok then putStrLn "All tests passed" else putStrLn "Failed"
 
 
 iIter n x y z = In (Iter' n x y z)
-iAdd x y = In (Add' x y)
-iVar x = In (Var' x)
-iLitI l = In (LitI' l)
-iLitB l = In (LitB' l)
+iAdd x y      = In (Add' x y)
+iVar x        = In (Var' x)
+iLitI l       = In (LitI' l)
+iLitB l       = In (LitB' l)
 
 
 gt1 :: Tree ExpF
@@ -233,6 +289,7 @@ gt1 = iIter "x" x x (iAdd (iIter "y" z z (iAdd z y)) y)
 
 g1 :: Dag ExpF
 g1 = unsafePerformIO $ reifyDag gt1
+
 
 gt2 :: Tree ExpF
 gt2 = iIter "x" x (iIter "x" x x y) y
@@ -251,3 +308,4 @@ gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
 
 g3 :: Dag ExpF
 g3 = unsafePerformIO $ reifyDag gt3
+
