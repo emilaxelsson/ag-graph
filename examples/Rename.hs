@@ -206,9 +206,13 @@ rename g = g {root = r, edges = es, nodeCount = n}
 --------------------------------------------------------------------------------
 
 alphaEq' :: [(Name,Name)] -> Tree ExpF -> Tree ExpF -> Bool
-alphaEq' env (In (Var' v1)) (In (Var' v2))
-    | Just v <- lookup v1 env = v==v2
-    | otherwise               = v1==v2
+alphaEq' env (In (Var' v1)) (In (Var' v2)) =
+    case (lookup v1 env, lookup v2 env') of
+      (Nothing, Nothing)   -> v1==v2  -- Free variables
+      (Just v2', Just v1') -> v1==v1' && v2==v2'
+      _                    -> False
+  where
+    env' = [(v2,v1) | (v1,v2) <- env]
 alphaEq' env (In (Iter' v1 k1 i1 b1)) (In (Iter' v2 k2 i2 b2)) =
     alphaEq' env k1 k2 && alphaEq' env i1 i2 && alphaEq' ((v1,v2):env) b1 b2
 alphaEq' env (In (LitB' b1))     (In (LitB' b2))     = b1==b2
