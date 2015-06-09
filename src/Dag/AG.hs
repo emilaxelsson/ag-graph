@@ -45,72 +45,73 @@ import Data.STRef
 import qualified Data.Traversable as Traversable
 import Data.Vector (Vector,MVector)
 import qualified Data.Vector as Vec
+import Data.Vector ((!))
 import qualified Data.Vector.Generic.Mutable as MVec
 
 -- | This function runs an attribute grammar on a dag. The result is
 -- the (combined) synthesised attribute at the root of the dag.
 
-runAGDag :: forall f d u .Traversable f
-    => (d -> d -> d)   -- ^ resolution function for inherited attributes
-    -> Syn' f (u,d) u  -- ^ semantic function of synthesised attributes
-    -> Inh' f (u,d) d  -- ^ semantic function of inherited attributes
-    -> (u -> d)        -- ^ initialisation of inherited attributes
+runAGDag :: forall f i s .Traversable f
+    => (i -> i -> i)   -- ^ resolution function for inherited attributes
+    -> Syn' f (s,i) s  -- ^ semantic function of synthesised attributes
+    -> Inh' f (s,i) i  -- ^ semantic function of inherited attributes
+    -> (s -> i)        -- ^ initialisation of inherited attributes
     -> Dag f           -- ^ input dag
-    -> u
-runAGDag res syn inh dinit Dag {edges,root,nodeCount} = uFin where
-    uFin = runST runM
-    dFin = dinit uFin
-    runM :: forall s . ST s u
+    -> s
+runAGDag res syn inh iinit Dag {edges,root,nodeCount} = sFin where
+    sFin = runST runM
+    iFin = iinit sFin
+    runM :: forall st . ST st s
     runM = mdo
       -- construct empty mapping from nodes to inherited attribute values
-      dmap <- MVec.new nodeCount
-      MVec.set dmap Nothing
+      imap <- MVec.new nodeCount
+      MVec.set imap Nothing
       -- allocate mapping from nodes to synthesised attribute values
-      umap <- MVec.new nodeCount
+      smap <- MVec.new nodeCount
       -- allocate counter for numbering child nodes
       count <- newSTRef 0
       let -- Runs the AG on an edge with the given input inherited
           -- attribute value and produces the output synthesised
           -- attribute value.
-          run :: d -> f (Free f Node) -> ST s u
-          run d t = mdo
+          run :: i -> f (Free f Node) -> ST st s
+          run i t = mdo
              -- apply the semantic functions
-             let u = explicit syn (u,d) unNumbered result
-                 m = explicit inh (u,d) unNumbered result
+             let s = explicit syn (s,i) unNumbered result
+                 m = explicit inh (s,i) unNumbered result
                  -- recurses into the child nodes and numbers them
-                 run' :: Free f Node -> ST s (Numbered (u,d))
-                 run' s = do i <- readSTRef count
-                             writeSTRef count $! (i+1)
-                             let d' = lookupNumMap d i m
-                             u' <- runF d' s -- recurse
-                             return (Numbered i (u',d'))
+                 run' :: Free f Node -> ST st (Numbered (s,i))
+                 run' c = do n <- readSTRef count
+                             writeSTRef count $! (n+1)
+                             let i' = lookupNumMap i n m
+                             s' <- runF i' c -- recurse
+                             return (Numbered n (s',i'))
              writeSTRef count 0  -- re-initialize counter
              result <- Traversable.mapM run' t
-             return u
+             return s
           -- recurses through the tree structure
-          runF :: d -> Free f Node -> ST s u
-          runF d (Ret x) = do
+          runF :: i -> Free f Node -> ST st s
+          runF i (Ret x) = do
              -- we found a node: update the mapping for inherited
              -- attribute values
-             old <- MVec.unsafeRead dmap x
+             old <- MVec.unsafeRead imap x
              let new = case old of
-                         Just o -> res o d
-                         _      -> d
-             MVec.unsafeWrite dmap x (Just new)
-             return (umapFin Vec.! x)
-          runF d (In t)  = run d t
+                         Just o -> res o i
+                         _      -> i
+             MVec.unsafeWrite imap x (Just new)
+             return (smapFin ! x)
+          runF i (In t)  = run i t
           -- This function is applied to each edge
           iter (n, t) = do
-            u <- run (fromJust $ dmapFin Vec.! n) t
-            MVec.unsafeWrite umap n u
+            s <- run (fromJust $ imapFin ! n) t
+            MVec.unsafeWrite smap n s
       -- first apply to the root
-      u <- run dFin root
+      s <- run iFin root
       -- then apply to the edges
       mapM_ iter (IntMap.toList edges)
       -- finalise the mappings for attribute values
-      dmapFin <- Vec.unsafeFreeze dmap
-      umapFin <- Vec.unsafeFreeze umap
-      return u
+      imapFin <- Vec.unsafeFreeze imap
+      smapFin <- Vec.unsafeFreeze smap
+      return s
 
 
 

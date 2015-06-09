@@ -21,7 +21,7 @@ import Dag.PAG
 import Data.Foldable
 import System.IO.Unsafe
 
-newtype MinS a = MinS {unMinS :: Int} deriving (Eq,Ord,Functor, Foldable, Traversable)
+newtype MinS a = MinS {unMinS :: Int} deriving (Functor, Foldable, Traversable)
 newtype MinI a = MinI a deriving (Functor, Foldable, Traversable)
 
 data IntTreeF a = Leaf Int | Node a a
@@ -40,13 +40,23 @@ minS (Node a b)  =  MinS $ min (unMinS $ below a) (unMinS $ below b)
 minI :: Inh IntTreeF atts MinI f
 minI _ = empty
 
+
+globMin  ::  (?above :: atts n, MinI :< atts) => n
+globMin  =   let MinI i = above in i
+
+
 rep ::  (MinI :< atts) => Syn IntTreeF atts I IntTreeF
-rep (Leaf _)    =  let MinI n = above in I (Ret n)
+rep (Leaf _)    =  I (Ret globMin)
 rep (Node a b)  =  I $ iNode (Ret $ unI $ below a) (Ret $ unI $ below b)
 
 
 repminG :: Dag IntTreeF -> Dag IntTreeF
 repminG = unI . ffst . runPAGDag const (rep |*| minS) minI  init
+  where init (_ :*: MinS i) = MinI (iLeaf i)
+
+
+repmin :: Tree IntTreeF -> Tree IntTreeF
+repmin = unI . ffst . runPAG (rep |*| minS) minI  init
   where init (_ :*: MinS i) = MinI (iLeaf i)
 
 
@@ -65,8 +75,3 @@ it2 = iNode x (iNode (iLeaf 5) x)
 
 i2 :: Dag IntTreeF
 i2 = unsafePerformIO $ reifyDag it2
-
--- repmin :: Term IntTreeF -> Term IntTreeF
--- repmin = unI . fsnd . runPAG (minS |*| rep) minI  init
---   where init (MinS i :*: _) = MinI (iLeaf i)
-

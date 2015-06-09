@@ -36,23 +36,23 @@ import Projection as I
 -- | This function runs an attribute grammar on a term. The result is
 -- the (combined) synthesised attribute at the root of the term.
 
-runAG :: forall f u d . Traversable f
-      => Syn' f (u,d) u -- ^ semantic function of synthesised attributes
-      -> Inh' f (u,d) d -- ^ semantic function of inherited attributes
-      -> (u -> d)       -- ^ initialisation of inherited attributes
-      -> Tree f         -- ^ input term
-      -> u
-runAG up down dinit t = uFin where
-    uFin = run dFin t
-    dFin = dinit uFin
-    run :: d -> Tree f -> u
-    run d (In t) = u where
-        t' = fmap bel $ number t
-        bel (Numbered i s) =
-            let d' = lookupNumMap d i m
-            in Numbered i (run d' s, d')
-        m = explicit down (u,d) unNumbered t'
-        u = explicit up (u,d) unNumbered t'
+runAG :: forall f s i . Traversable f
+      => Syn' f (s,i) s -- ^ semantic function of synthesised attributes
+      -> Inh' f (s,i) i -- ^ semantic function of inherited attributes
+      -> (s -> i)       -- ^ initialisation of inherited attributes
+      -> Tree f         -- ^ input tree
+      -> s
+runAG syn inh init t = sFin where
+    sFin = run iFin t
+    iFin = init sFin
+    run :: i -> Tree f -> s
+    run i (In t) = s where
+        bel (Numbered n c) =  let i' = lookupNumMap i n m
+                              in Numbered n (run i' c, i')
+        t'  = fmap bel (number t)
+        m   = explicit inh (s,i) unNumbered t'
+        s   = explicit syn (s,i) unNumbered t'
+
 
 -- | This function runs an attribute grammar with rewrite function on
 -- a term. The result is the (combined) synthesised attribute at the

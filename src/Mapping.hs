@@ -35,8 +35,9 @@ unNumbered (Numbered _ x) = x
 
 -- | This function numbers the components of the given functorial
 -- value with consecutive integers starting at 0.
-number :: Traversable f => f a -> f (Numbered a)
+number :: Traversable f => f c -> f (Numbered c)
 number x = evalState (mapM run x) 0 where
+  run :: c -> State Int (Numbered c)
   run b = do n <- get
              put (n+1)
              return $ Numbered n b
