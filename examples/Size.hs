@@ -26,18 +26,18 @@ import Paper (Name, trueIntersection)
 
 import System.IO.Unsafe
 
-data ExpF a = LitB' Bool | LitI' Int | Var' Name
-            | Eq' a a    | Add' a a  | If' a a a
-            | Let' Name a a  -- `Let v x y` means "let v be x in y"
+data ExpF a = LitB Bool | LitI Int | Var Name
+            | Eq a a    | Add a a  | If a a a
+            | Let Name a a  -- `Let v x y` means "let v be x in y"
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-iLet n x y = In (Let' n x y)
-iIf b x y = In (If' b x y)
-iEq x y = In (Eq' x y)
-iAdd x y = In (Add' x y)
-iVar x = In (Var' x)
-iLitI l = In (LitI' l)
-iLitB l = In (LitB' l)
+iLet n x y = In (Let n x y)
+iIf b x y = In (If b x y)
+iEq x y = In (Eq x y)
+iAdd x y = In (Add x y)
+iVar x = In (Var x)
+iLitI l = In (LitI l)
+iLitB l = In (LitB l)
 
 
 type Size = Maybe Int
@@ -50,21 +50,21 @@ sizeOf ::  (?below :: a -> atts, Size :< atts) => a -> Size
 sizeOf = below
 
 sizeInfS :: (Env :< atts) => Syn ExpF atts Size
-sizeInfS (LitB' _)    = Nothing
-sizeInfS (LitI' i)    = Just i
-sizeInfS (Eq' a b)    = Nothing
-sizeInfS (Add' a b)   = do sa <- sizeOf a
-                           sb <- sizeOf b
-                           return (sa+sb)
-sizeInfS (If' _ t f)  = do st <- sizeOf t
-                           sf <- sizeOf f
-                           return (max st sf)
-sizeInfS (Var' v)     = lookEnv v above
-sizeInfS (Let' v a b) = sizeOf b
+sizeInfS (LitB _)    = Nothing
+sizeInfS (LitI i)    = Just i
+sizeInfS (Eq a b)    = Nothing
+sizeInfS (Add a b)   = do sa <- sizeOf a
+                          sb <- sizeOf b
+                          return (sa+sb)
+sizeInfS (If _ t f)  = do st <- sizeOf t
+                          sf <- sizeOf f
+                          return (max st sf)
+sizeInfS (Var v)     = lookEnv v above
+sizeInfS (Let v a b) = sizeOf b
 
 sizeInfI :: (Size :< atts) => Inh ExpF atts Env
-sizeInfI (Let' v a b) = b |-> Map.insert v (sizeOf a) above
-sizeInfI _            = o
+sizeInfI (Let v a b) = b |-> Map.insert v (sizeOf a) above
+sizeInfI _           = o
 
 sizeInf :: Env -> Tree ExpF -> Size
 sizeInf env = runAG sizeInfS sizeInfI (\ _ -> env)
