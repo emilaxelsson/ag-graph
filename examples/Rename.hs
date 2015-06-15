@@ -55,19 +55,6 @@ data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 
-data (f :&: ann) a = f a :&: ann
-  deriving (Eq, Show, Functor)
-
-getAnn :: (f :&: ann) a -> ann
-getAnn (_ :&: ann) = ann
-
-dropAnn :: (f :&: ann) a -> f a
-dropAnn (f :&: _) = f
-
-dropAnnFree :: Functor f => Free (f :&: ann) a -> Free f a
-dropAnnFree (In f)  = In $ fmap dropAnnFree $ dropAnn f
-dropAnnFree (Ret a) = Ret a
-
 -- | Variable aliasing environment
 type Aliases = [(Name,Name)]  -- [(oldName, newName)]
 

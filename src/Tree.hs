@@ -7,6 +7,7 @@
 {-# LANGUAGE DeriveFoldable      #-}
 {-# LANGUAGE DeriveTraversable      #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE TypeOperators             #-}
 
 module Tree where
 
@@ -14,7 +15,7 @@ import Control.Applicative
 import Data.Foldable
 import Data.Traversable
 
-    
+
 -- * Term trees as free monad over a signature functor.
 
 -- | Free monad over functor @f@.
@@ -38,7 +39,7 @@ instance (Show (f NewString), Functor f, Show a) => Show (Free f a)
     show (Ret a) = show a
     show (In t) = show (fmap (NewString . show) t)
 
-           
+
 instance Functor f => Applicative (Free f) where
   pure    = Ret
   Ret f <*> a = f <$> a
@@ -79,3 +80,18 @@ freeTree = fmap zero
 appCxt :: Functor f => Free f (Free f a) -> Free f a
 appCxt (In f)  = In (fmap appCxt f)
 appCxt (Ret h) = h
+
+-- | Pair a functor with an annotation
+data (f :&: ann) a = f a :&: ann
+  deriving (Eq, Show, Functor)
+
+getAnn :: (f :&: ann) a -> ann
+getAnn (_ :&: ann) = ann
+
+dropAnn :: (f :&: ann) a -> f a
+dropAnn (f :&: _) = f
+
+dropAnnFree :: Functor f => Free (f :&: ann) a -> Free f a
+dropAnnFree (In f)  = In $ fmap dropAnnFree $ dropAnn f
+dropAnnFree (Ret a) = Ret a
+
