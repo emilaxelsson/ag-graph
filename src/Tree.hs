@@ -95,3 +95,11 @@ dropAnnFree :: Functor f => Free (f :&: ann) a -> Free f a
 dropAnnFree (In f)  = In $ fmap dropAnnFree $ dropAnn f
 dropAnnFree (Ret a) = Ret a
 
+-- | Catamorphism
+cata :: Functor f => (f a -> a) -> Tree f -> a
+cata alg (In f) = alg $ fmap (cata alg) f
+
+-- | Monadic catamorphism
+cataM :: (Traversable f, Monad m) => (f a -> m a) -> Tree f -> m a
+cataM alg (In f) = alg =<< traverse (cataM alg) f
+
