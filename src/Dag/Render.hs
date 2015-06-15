@@ -46,12 +46,12 @@ arity = length . Foldable.toList
 nodeToGraph' :: (ShowConstr f, Functor f, Foldable f) =>
     Free (f :&: Int) Node -> ExpGraph
 nodeToGraph' (Ret _) = []
-nodeToGraph' (In f)  = nodeToGraph f
+nodeToGraph' (In f)  = nodeToGraph "white" f
 
 nodeToGraph :: (ShowConstr f, Functor f, Foldable f) =>
-    (f :&: Int) (Free (f :&: Int) Node) -> ExpGraph
-nodeToGraph (f :&: x) = concat
-    $  [node x (showConstr f) (arity f)]
+    Color -> (f :&: Int) (Free (f :&: Int) Node) -> ExpGraph
+nodeToGraph col (f :&: x) = concat
+    $  [node x (showConstr f) col (arity f)]
     ++ [mkEdge x i inp | (i,inp) <- [0..] `zip` Foldable.toList f]
     ++ [Foldable.fold $ fmap nodeToGraph' f]
   where

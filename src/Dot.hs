@@ -24,6 +24,9 @@ type Label = String
 -- | Input index (first input has index 0)
 type Input = Int
 
+-- | Node color (e.g. \"#AAA\")
+type Color = String
+
 -- | Number of inputs for a node
 type Arity = Int
 
@@ -31,10 +34,12 @@ type Arity = Int
 type ExpGraph = [Statement]
 
 -- Create a node
-node :: ID -> Label -> Arity -> ExpGraph
-node id lab ar = return $ NodeStatement
+node :: ID -> Label -> Color -> Arity -> ExpGraph
+node id lab col ar = return $ NodeStatement
     (NodeId (NameId (show id)) Nothing)
-    [AttributeSetValue (NameId "label") (NameId labStr)]
+    [ AttributeSetValue (NameId "fillcolor") (NameId col)
+    , AttributeSetValue (NameId "label") (NameId labStr)
+    ]
   where
     labStr = concat
       [ "<"
@@ -89,7 +94,7 @@ subGraph id
 setRoundedNode :: ExpGraph
 setRoundedNode = return $ NodeStatement
     (NodeId (NameId "node") Nothing)
-    [ AttributeSetValue (NameId "style") (NameId "rounded")
+    [ AttributeSetValue (NameId "style") (StringId "rounded,filled")
     , AttributeSetValue (NameId "shape") (NameId "box")
     ]
 
