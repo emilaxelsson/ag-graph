@@ -60,32 +60,12 @@ nodeToGraph (f :&: x) = concat
 
 dagToGraph :: (ShowConstr f, Traversable f) => Dag f -> ExpGraph
 dagToGraph dag = concat $
-    [nodeToGraph $ root dag']
+    [nodeToGraph "lightgrey" $ root dag']
       ++
-    [subGraph n $ nodeToGraph f | (n,f) <- assocs $ edges dag']
+    [nodeToGraph "lightgrey" f | (n,f) <- assocs $ edges dag']
   where
     dag' = numberNodes dag
 
 renderDag :: (ShowConstr f, Traversable f) => Dag f -> FilePath -> IO ()
 renderDag dag file = renderGraph (dagToGraph dag) file
-
-
-
-graph1 = concat
-    [ node 1 "add" 2
-    , node 2 "sub" 2
-    , node 3 "mul" 2
-    , edge 1 0 2
-    , edge 1 1 3
-    ]
-
-graph2 = concat
-    [ node 4 "add" 2
-    , edge 4 0 1
-    , edge 4 1 1
-    ]
-
-graph3 = subGraph 1 graph1 ++ subGraph 4 graph2
-
-main = renderGraph graph3 "graph.dot"
 
