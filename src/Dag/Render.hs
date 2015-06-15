@@ -5,7 +5,6 @@ module Dag.Render where
 
 
 import Control.Monad.State
-import Control.Monad.Writer
 import qualified Data.Foldable as Foldable
 import Data.IntMap
 
