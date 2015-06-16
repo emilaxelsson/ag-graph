@@ -408,30 +408,23 @@ instance HasVars ExpF Name
           ([],[v']) -> Iter' v' k i b
     renameVars f = fmap fst f
 
+instance EqConstr ExpF
+  where
+    eqConstr (LitB' b1)      (LitB' b2)      = b1==b2
+    eqConstr (LitI' i1)      (LitI' i2)      = i1==i2
+    eqConstr (Var' v1)       (Var' v2)       = v1==v2
+    eqConstr (Eq' _ _)       (Eq' _ _)       = True
+    eqConstr (Add' _ _)      (Add' _ _)      = True
+    eqConstr (If' _ _ _)     (If' _ _ _)     = True
+    eqConstr (Iter' _ _ _ _) (Iter' _ _ _ _) = True
+    eqConstr _ _ = False
+
 -- | Make the DAG well-scoped
 rename' :: Dag ExpF -> Dag ExpF
 rename' = rename (Just "")
 
-alphaEq' :: [(Name,Name)] -> Tree ExpF -> Tree ExpF -> Bool
-alphaEq' env (In (Var' v1)) (In (Var' v2)) =
-    case (lookup v1 env, lookup v2 env') of
-      (Nothing, Nothing)   -> v1==v2  -- Free variables
-      (Just v2', Just v1') -> v1==v1' && v2==v2'
-      _                    -> False
-  where
-    env' = [(v2,v1) | (v1,v2) <- env]
-alphaEq' env (In (Iter' v1 k1 i1 b1)) (In (Iter' v2 k2 i2 b2)) =
-    alphaEq' env k1 k2 && alphaEq' env i1 i2 && alphaEq' ((v1,v2):env) b1 b2
-alphaEq' env (In (LitB' b1))     (In (LitB' b2))     = b1==b2
-alphaEq' env (In (LitI' i1))     (In (LitI' i2))     = i1==i2
-alphaEq' env (In (Eq' a1 b1))    (In (Eq' a2 b2))    = alphaEq' env a1 a2 && alphaEq' env b1 b2
-alphaEq' env (In (Add' a1 b1))   (In (Add' a2 b2))   = alphaEq' env a1 a2 && alphaEq' env b1 b2
-alphaEq' env (In (If' c1 t1 f1)) (In (If' c2 t2 f2)) = alphaEq' env c1 c2 && alphaEq' env t1 t2 && alphaEq' env f1 f2
-alphaEq' env _ _ = False
-
--- | Alpha-equivalence (for testing the renamer)
-alphaEq :: Tree ExpF -> Tree ExpF -> Bool
-alphaEq = alphaEq' []
+alphaEq' :: Tree ExpF -> Tree ExpF -> Bool
+alphaEq' = alphaEq (Nothing :: Maybe Name)
 
 -- | Like 'flatten' but adds the root as a node in the graph
 flatten' :: Traversable f => Dag f -> (Node, IntMap (f Node), Int)
@@ -472,7 +465,7 @@ isWellScoped g = all checkVar $ fmap concat $ groups sc
     sc = scope g []
 
 -- | Renaming does not changes semantics
-prop_rename1 g = unravelDag g `alphaEq` unravelDag (rename' g)
+prop_rename1 g = unravelDag g `alphaEq'` unravelDag (rename' g)
 
 -- | Renaming does not decrease the number of edges
 prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename' g)

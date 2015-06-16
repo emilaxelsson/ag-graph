@@ -95,6 +95,23 @@ instance HasVars ExpF Name
           ([],[v']) -> Arr l v' f
     renameVars f = fmap fst f
 
+instance EqConstr ExpF
+  where
+    eqConstr (Var v1)     (Var v2)     = v1==v2
+    eqConstr (LitB b1)    (LitB b2)    = b1==b2
+    eqConstr (LitI i1)    (LitI i2)    = i1==i2
+    eqConstr (Add _ _)    (Add _ _)    = True
+    eqConstr (Sub _ _)    (Sub _ _)    = True
+    eqConstr (Mul _ _)    (Mul _ _)    = True
+    eqConstr (Eq _ _)     (Eq _ _)     = True
+    eqConstr (Min _ _)    (Min _ _)    = True
+    eqConstr (Max _ _)    (Max _ _)    = True
+    eqConstr (If _ _ _)   (If _ _ _)   = True
+    eqConstr (Let v1 _ _) (Let v2 _ _) = v1==v2
+    eqConstr (Arr _ v1 _) (Arr _ v2 _) = v1==v2
+    eqConstr (Ix _ _)     (Ix _ _)     = True
+    eqConstr _ _ = False
+
 -- | The type of Feldspar expressions
 newtype Data a = Data { unData :: Tree ExpF }
 
@@ -329,6 +346,9 @@ rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
 
 rename' :: Dag ExpF -> Dag ExpF
 rename' = rename (Just (0 :: Name))
+
+alphaEq' :: Tree ExpF -> Tree ExpF -> Bool
+alphaEq' = alphaEq (Nothing :: Maybe Name)
 
 -- | Size of an expression = over-approximation of the set of values it might
 -- take on
