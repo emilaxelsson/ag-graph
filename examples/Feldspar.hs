@@ -455,16 +455,16 @@ prop_simplifyDag d = dsimp == dsimpg
 
 
 --------------------------------------------------------------------------------
--- * Draw AST
+-- * Render AST
 --------------------------------------------------------------------------------
 
-drawAST :: Data a -> FilePath -> IO ()
-drawAST d file = do
+renderAST :: Data a -> FilePath -> IO ()
+renderAST d file = do
     dag <- reifyDag $ unData d
     renderDag dag file
 
-drawAST_simp :: Data a -> FilePath -> IO ()
-drawAST_simp d file = do
+renderAST_simp :: Data a -> FilePath -> IO ()
+renderAST_simp d file = do
     dag <- reifyDag $ unData d
     renderDag (simplifyDag dag) file
 
@@ -472,7 +472,7 @@ astToSvg :: Data a -> IO ()
 astToSvg d = do
     tmpd <- getTemporaryDirectory
     let tmpf = tmpd </> "523452345234"
-    drawAST d tmpf
+    renderAST d tmpf
     system $ "dot -Tsvg " ++ tmpf ++ " -o ast.svg"
     return ()
 
@@ -480,7 +480,7 @@ astToSvg_simp :: Data a -> IO ()
 astToSvg_simp d = do
     tmpd <- getTemporaryDirectory
     let tmpf = tmpd </> "523452345234"
-    drawAST_simp d tmpf
+    renderAST_simp d tmpf
     system $ "dot -Tsvg " ++ tmpf ++ " -o ast.svg"
     return ()
 
