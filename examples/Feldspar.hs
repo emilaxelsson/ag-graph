@@ -97,19 +97,19 @@ instance HasVars ExpF Name
 
 instance EqConstr ExpF
   where
-    eqConstr (Var v1)     (Var v2)     = v1==v2
-    eqConstr (LitB b1)    (LitB b2)    = b1==b2
-    eqConstr (LitI i1)    (LitI i2)    = i1==i2
-    eqConstr (Add _ _)    (Add _ _)    = True
-    eqConstr (Sub _ _)    (Sub _ _)    = True
-    eqConstr (Mul _ _)    (Mul _ _)    = True
-    eqConstr (Eq _ _)     (Eq _ _)     = True
-    eqConstr (Min _ _)    (Min _ _)    = True
-    eqConstr (Max _ _)    (Max _ _)    = True
-    eqConstr (If _ _ _)   (If _ _ _)   = True
-    eqConstr (Let v1 _ _) (Let v2 _ _) = v1==v2
-    eqConstr (Arr _ v1 _) (Arr _ v2 _) = v1==v2
-    eqConstr (Ix _ _)     (Ix _ _)     = True
+    eqConstr (Var v1)    (Var v2)    = v1==v2
+    eqConstr (LitB b1)   (LitB b2)   = b1==b2
+    eqConstr (LitI i1)   (LitI i2)   = i1==i2
+    eqConstr (Add _ _)   (Add _ _)   = True
+    eqConstr (Sub _ _)   (Sub _ _)   = True
+    eqConstr (Mul _ _)   (Mul _ _)   = True
+    eqConstr (Eq _ _)    (Eq _ _)    = True
+    eqConstr (Min _ _)   (Min _ _)   = True
+    eqConstr (Max _ _)   (Max _ _)   = True
+    eqConstr (If _ _ _)  (If _ _ _)  = True
+    eqConstr (Let _ _ _) (Let _ _ _) = True
+    eqConstr (Arr _ _ _) (Arr _ _ _) = True
+    eqConstr (Ix _ _)    (Ix _ _)    = True
     eqConstr _ _ = False
 
 -- | The type of Feldspar expressions
@@ -480,7 +480,7 @@ prop_simplifyEval d
 
 -- | 'simplify' and 'simplifyDag' give the same result
 prop_simplifyDag :: Data a -> Bool
-prop_simplifyDag d = dsimp == dsimpg
+prop_simplifyDag d = dsimp `alphaEq'` dsimpg
   where
     dsimp  = simplify (unData d)
     dsimpg = unravelDag $ simplifyDag $ unsafePerformIO $ reifyDag $ unData d
@@ -534,9 +534,8 @@ test1_simp = astToSvg_simp ex1
 ex2 :: Data Integer
 ex2 = a ! 3 + b ! 2
   where
-    v0 = Data (In (Var 0))
-    a  = arr 10 $ \i -> v0*v0
-    b  = arr 20 $ \i -> v0*v0
+    a = arr 10 $ \i -> i*i
+    b = arr 20 $ \i -> i*i
 
 test2      = astToSvg ex2
 test2_simp = astToSvg_simp ex2
