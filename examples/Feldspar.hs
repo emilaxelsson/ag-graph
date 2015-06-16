@@ -64,6 +64,9 @@ instance ShowConstr ExpF
     showConstr (Add _ _)   = "Add"
     showConstr (Sub _ _)   = "Sub"
     showConstr (Mul _ _)   = "Mul"
+    showConstr (Eq _ _)    = "Eq"
+    showConstr (Min _ _)   = "Min"
+    showConstr (Max _ _)   = "Max"
     showConstr (If _ _ _)  = "If"
     showConstr (Let v _ _) = "Let " ++ showVar v
     showConstr (Arr _ v _) = "Arr " ++ showVar v
