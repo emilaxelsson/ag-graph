@@ -18,11 +18,13 @@ module Feldspar where
 import Control.Applicative
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
+import Data.List (genericLength)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import System.Directory (getTemporaryDirectory)
 import System.FilePath ((</>))
+import System.IO.Unsafe (unsafePerformIO)
 import System.Process (system)
 
 import Variables
@@ -252,14 +254,25 @@ eval (Data a) = (\(Just a) -> a) $ do
 
 type Range = (Maybe Integer, Maybe Integer)
 
+-- | Lower bound of a range
 lower :: Range -> Maybe Integer
 lower = fst
 
+-- | Upper bound of a range
 upper :: Range -> Maybe Integer
 upper = snd
 
+-- | Range union
 union :: Range -> Range -> Range
 union (l1,u1) (l2,u2) = (min l1 l2, max u1 u2)
+
+-- | Check whether the first range is contained in the second range
+isSubRangeOf :: Range -> Range -> Bool
+isSubRangeOf r1 r2 = union r1 r2 == r2
+
+-- | Check whether the integer is in the given range
+inRange :: Integer -> Range -> Bool
+inRange i r = fromInteger i `isSubRangeOf` r
 
 instance Num (Maybe Integer)
   where
@@ -290,9 +303,11 @@ instance Num Range
     abs    = error "abs not implemented for Range"
     signum = error "signum not implemented for Range"
 
+-- | Propagate ranges over the 'min' function
 rangeMin :: Range -> Range -> Range
 rangeMin (l1,u1) (l2,u2) = (min l1 l2, min u1 u2)
 
+-- | Propagate ranges over the 'max' function
 rangeMax :: Range -> Range -> Range
 rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
 
@@ -311,6 +326,16 @@ rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
 -- * Non-integer scalars: 0
 -- * Arrays:              1 + the number of ranges of the element type
 type Size = [Range]
+
+-- | Check whether the integer is in the given size
+inSize :: forall a . Typeable a => a -> Size -> Bool
+inSize = go (typeRep :: Type a)
+  where
+    go :: Type b -> b -> Size -> Bool
+    go BoolType _ _           = True
+    go IntType  i [r]         = i `inRange` r
+    go (ListType t) as (r:rs) =
+        inRange (genericLength as) r && all (\a -> go t a rs) as
 
 lookEnv :: Name -> Env Size -> Size
 lookEnv n env = case Map.lookup n env of
@@ -347,8 +372,8 @@ sizeArrIx [szl] = [(0, upper (szl-1))]
 sizeInf :: Tree ExpF -> Size
 sizeInf = runAG sizeInfS sizeInfI (\ _ -> Map.empty)
 
-sizeInfG :: Dag ExpF -> Size
-sizeInfG = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> Map.empty)
+sizeInfDag :: Dag ExpF -> Size
+sizeInfDag = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> Map.empty)
 
 viewSingleton :: Size -> Maybe Integer
 viewSingleton [(Just l, Just u)] | l == u = Just l
@@ -406,6 +431,27 @@ simplifyDag
         (const Map.empty)
     . rename'
 
+-- | 'sizeInf' is an over-approximation of 'eval'
+prop_sizeInf :: Typeable a => Data a -> Bool
+prop_sizeInf d = eval d `inSize` sizeInf (unData d)
+
+-- | 'sizeInfDag' is an over-approximation of 'eval'
+prop_sizeInfDag :: Typeable a => Data a -> Bool
+prop_sizeInfDag d = eval d `inSize` sizeInfDag (unsafePerformIO $ reifyDag $ unData d)
+
+-- | 'simplify' does not change semantics
+prop_simplifyEval :: forall a . Typeable a => Data a -> Bool
+prop_simplifyEval d
+    | Wit <- witEq (typeRep :: Type a)
+    = eval d == eval (Data $ simplify $ unData d)
+
+-- | 'simplify' and 'simplifyDag' give the same result
+prop_simplifyDag :: Data a -> Bool
+prop_simplifyDag d = dsimp == dsimpg
+  where
+    dsimp  = simplify (unData d)
+    dsimpg = unravelDag $ simplifyDag $ unsafePerformIO $ reifyDag $ unData d
+
 
 
 --------------------------------------------------------------------------------
@@ -451,4 +497,18 @@ ex1 = arr 10 $ \i -> let a = i+tre+4 in iff (a<=>tre) (let b = a+2 in b+b*b) (a+
 
 test1      = astToSvg ex1
 test1_simp = astToSvg_simp ex1
+
+data Ex c
+  where
+    Ex :: Typeable a => c a -> Ex c
+
+testAll
+    | allOK     = putStrLn "All tests passed"
+    | otherwise = putStrLn "Failed"
+  where
+    es = [Ex ex1]
+    allOK = all (\(Ex e) -> prop_sizeInf      e) es
+         && all (\(Ex e) -> prop_sizeInfDag   e) es
+         && all (\(Ex e) -> prop_simplifyEval e) es
+         && all (\(Ex e) -> prop_simplifyDag  e) es
 

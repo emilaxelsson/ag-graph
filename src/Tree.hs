@@ -59,6 +59,7 @@ simpCxt = In . fmap Ret
 
 -- | Empty type.
 data Zero
+deriving instance Eq Zero
 deriving instance Show Zero
 
 -- | Empty type elimination.
