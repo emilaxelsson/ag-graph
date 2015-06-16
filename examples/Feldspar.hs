@@ -327,6 +327,9 @@ rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
 -- * Transformation
 --------------------------------------------------------------------------------
 
+rename' :: Dag ExpF -> Dag ExpF
+rename' = rename (Just (0 :: Name))
+
 -- | Size of an expression = over-approximation of the set of values it might
 -- take on
 --
@@ -384,7 +387,9 @@ sizeInf :: Tree ExpF -> Size
 sizeInf = runAG sizeInfS sizeInfI (\ _ -> Map.empty)
 
 sizeInfDag :: Dag ExpF -> Size
-sizeInfDag = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> Map.empty)
+sizeInfDag
+    = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> Map.empty)
+    . rename'
 
 viewSingleton :: Size -> Maybe Integer
 viewSingleton [(Just l, Just u)] | l == u = Just l
@@ -427,9 +432,6 @@ simplify = snd . runRewrite
     sizeInfI
     simplifier
     (const Map.empty)
-
-rename' :: Dag ExpF -> Dag ExpF
-rename' = rename (Just (0 :: Name))
 
 simplifyDag :: Dag ExpF -> Dag ExpF
 simplifyDag
