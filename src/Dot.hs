@@ -54,7 +54,7 @@ node id lab col ar = return $ NodeStatement
       , ">"
       ]
     mkInp inp = concat
-      [ "<TD PORT=\"i"
+      [ "<TD PORT=\"inp"
       , show inp
       , "\"> &nbsp;&nbsp;"
       , "</TD>"
@@ -70,7 +70,7 @@ edge from inp to =
     [ NodeStatement
         ( NodeId
             (NameId (show from))
-            (Just (PortI (NameId ("i" ++ show inp ++ ":c")) Nothing))
+            (Just (PortI (NameId ("inp" ++ show inp ++ ":c")) Nothing))
               -- ":c" is a hack because the `Compass` type doesn't include a
               -- center direction
         )
