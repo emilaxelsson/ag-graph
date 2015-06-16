@@ -352,7 +352,7 @@ inSize = go (typeRep :: Type a)
 
 lookEnv :: Name -> Env Size -> Size
 lookEnv n env = case Map.lookup n env of
-    Nothing -> []
+    Nothing -> error $ "lookEnv: variable " ++ show n ++ " not in scope"
     Just sz -> sz
 
 sizeOf ::  (?below :: a -> atts, Size :< atts) => a -> Size
