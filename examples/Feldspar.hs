@@ -154,13 +154,13 @@ maxBV (In f)           = maximum $ (0:) $ Foldable.toList $ fmap maxBV f
 share :: Data a -> (Data a -> Data b) -> Data b
 share (Data a) f = Data $ In $ Let v a body
   where
-    v    = maxBV body
+    v    = succ $ maxBV body
     body = unData $ f $ Data $ In $ Var v
 
 arr :: Data Integer -> (Data Integer -> Data a) -> Data [a]
 arr (Data l) ixf = Data $ In $ Arr l v body
   where
-    v    = maxBV body
+    v    = succ $ maxBV body
     body = unData $ ixf $ Data $ In $ Var v
 
 (!) :: Data [a] -> Data Integer -> Data a
