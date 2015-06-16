@@ -1,13 +1,9 @@
-{-# LANGUAGE StandaloneDeriving        #-}
-{-# LANGUAGE TypeSynonymInstances      #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE UndecidableInstances      #-}
-{-# LANGUAGE DeriveFunctor      #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveTraversable      #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE TypeOperators             #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveFunctor        #-}
+{-# LANGUAGE DeriveFoldable       #-}
+{-# LANGUAGE DeriveTraversable    #-}
+{-# LANGUAGE TypeOperators        #-}
 
 module Tree where
 
@@ -101,5 +97,5 @@ cata alg (In f) = alg $ fmap (cata alg) f
 
 -- | Monadic catamorphism
 cataM :: (Traversable f, Monad m) => (f a -> m a) -> Tree f -> m a
-cataM alg (In f) = alg =<< traverse (cataM alg) f
+cataM alg (In f) = alg =<< Data.Traversable.mapM (cataM alg) f
 

@@ -1,7 +1,6 @@
-{-# LANGUAGE ImplicitParams        #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE Rank2Types            #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE Rank2Types     #-}
+{-# LANGUAGE TypeOperators  #-}
 
 --------------------------------------------------------------------------------
 -- |

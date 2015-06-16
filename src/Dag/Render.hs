@@ -5,8 +5,10 @@ module Dag.Render where
 
 
 import Control.Monad.State
+import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.IntMap
+import Data.Traversable (Traversable, traverse)
 
 import Tree
 import Dag.Internal
