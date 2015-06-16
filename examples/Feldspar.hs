@@ -18,7 +18,7 @@ module Feldspar where
 import Control.Applicative
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
-import Data.List (genericLength)
+import Data.List (genericLength, genericIndex)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -52,6 +52,7 @@ data ExpF a
     | If a a a
     | Let Name a a  -- `Let v x y` means "let v be x in y"
     | Arr a Name a  -- `Arr l i b` means `map (\i -> b) [0..l-1]`
+    | Ix a a        -- `Ix arr i`  means `arr !! i`
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 instance ShowConstr ExpF
@@ -66,6 +67,7 @@ instance ShowConstr ExpF
     showConstr (If _ _ _)  = "If"
     showConstr (Let v _ _) = "Let " ++ showVar v
     showConstr (Arr _ v _) = "Arr " ++ showVar v
+    showConstr (Ix _ _)    = "Ix"
 
 showVar :: Name -> String
 showVar v = 'v' : show v
@@ -115,6 +117,9 @@ arr (Data l) ixf = Data $ In $ Arr l v body
   where
     v    = maxBV body
     body = unData $ ixf $ Data $ In $ Var v
+
+(!) :: Data [a] -> Data Integer -> Data a
+Data arr ! Data i = Data $ In $ Ix arr i
 
 true, false :: Data Bool
 true  = Data $ In $ LitB True
@@ -222,6 +227,11 @@ gamma |- Arr l v b = do
     b' ::: tb      <- ext (v,IntType) gamma |-- b
     let run e = map (\i -> b' (i,e)) [0 .. l' e - 1]
     return $ run ::: ListType tb
+gamma |- Ix a i = do
+    a' ::: ListType t <- gamma |-- a
+    i' ::: IntType    <- gamma |-- i
+    let run e = a' e `genericIndex` i' e
+    return $ run ::: t
 
 ext :: (Name, Type a) -> SymTab env -> SymTab (a,env)
 ext (v,t) gamma = Map.insert v (fst ::: t) (fmap shift gamma)
@@ -358,6 +368,7 @@ sizeInfS (Max a b)   = zipWith rangeMax (sizeOf a) (sizeOf b)
 sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
 sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
+sizeInfS (Ix arr i)  = tail (sizeOf arr)
 
 sizeInfI :: (Size :< atts) => Inh ExpF atts (Env Size)
 sizeInfI (Let v a b) = b |-> Map.insert v (sizeOf a) above
@@ -498,6 +509,16 @@ ex1 = arr 10 $ \i -> let a = i+tre+4 in iff (a<=>tre) (let b = a+2 in b+b*b) (a+
 test1      = astToSvg ex1
 test1_simp = astToSvg_simp ex1
 
+ex2 :: Data Integer
+ex2 = a ! 3 + b ! 2
+  where
+    v0 = Data (In (Var 0))
+    a  = arr 10 $ \i -> v0*v0
+    b  = arr 20 $ \i -> v0*v0
+
+test2      = astToSvg ex2
+test2_simp = astToSvg_simp ex2
+
 data Ex c
   where
     Ex :: Typeable a => c a -> Ex c
@@ -506,7 +527,7 @@ testAll
     | allOK     = putStrLn "All tests passed"
     | otherwise = putStrLn "Failed"
   where
-    es = [Ex ex1]
+    es = [Ex ex1, Ex ex2]
     allOK = all (\(Ex e) -> prop_sizeInf      e) es
          && all (\(Ex e) -> prop_sizeInfDag   e) es
          && all (\(Ex e) -> prop_simplifyEval e) es
