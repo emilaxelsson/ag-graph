@@ -79,9 +79,6 @@ type Wr f = IntMap (Cxt f Node)
 tellNode :: MonadWriter (Wr f) m => Node -> Cxt f Node -> m ()
 tellNode n f = tell $ IntMap.singleton n f
 
-tellVar :: MonadWriter (Wr f) m => v -> m ()
-tellVar v = tell IntMap.empty  -- TODO What!!??
-
 decorVarsM'
     :: (HasVars f v, Traversable f, Ord v)
     => Dag f
@@ -158,9 +155,9 @@ renameM
     -> Cxt (f :&: Set v) Node  -- ^ Current focus
     -> WriterT (Wr f) (State (St v)) (Cxt f Node)
 renameM g aliases (f :&: vs)
-    | Just v <- isVar f = case lookup v aliases of
-        Just v' -> tellVar v' >> return (mkVar v')
-        _       -> tellVar v  >> return (mkVar v)  -- Free variable
+    | Just v <- isVar f = return $ case lookup v aliases of
+        Just v' -> mkVar v'
+        _       -> mkVar v  -- Free variable
 renameM g aliases (f :&: vs) =
     fmap renameVars $ traverse renameGeneric $ number f
   where
