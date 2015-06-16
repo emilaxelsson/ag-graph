@@ -25,7 +25,11 @@ library
                     Tree
                     Variables
                     Projection
+                    Projection.Simple
+                    Projection.TypeFam
                     PAG.Projection
+                    PAG.Projection.Simple
+                    PAG.Projection.TypeFam
                     PAG.Product
 
   build-depends:
