@@ -118,6 +118,31 @@ instance EqConstr ExpF
 -- | The type of Feldspar expressions
 newtype Data a = Data { unData :: Tree ExpF }
 
+true, false :: Data Bool
+true  = Data $ In $ LitB True
+false = Data $ In $ LitB False
+
+instance Num (Data Integer)
+  where
+    fromInteger = Data . In . LitI . fromInteger
+    Data x + Data y = Data $ In $ Add x y
+    Data x - Data y = Data $ In $ Sub x y
+    Data x * Data y = Data $ In $ Mul x y
+    abs    = error "abs not implemented for Data Integer"
+    signum = error "signum not implemented for Data Integer"
+
+(<=>) :: Eq a => Data a -> Data a -> Data Bool
+Data x <=> Data y = Data $ In $ Eq x y
+
+minn :: Data Integer -> Data Integer -> Data Integer
+minn (Data a) (Data b) = Data $ In $ Min a b
+
+maxx :: Data Integer -> Data Integer -> Data Integer
+maxx (Data a) (Data b) = Data $ In $ Max a b
+
+iff :: Data Bool -> Data a -> Data a -> Data a
+iff (Data b) (Data x) (Data y) = Data $ In $ If b x y
+
 -- | Used to generate names for binding constructs; see \"Using Circular
 -- Programs for Higher-Order Syntax\" (ICFP 2013,
 -- <http://www.cse.chalmers.se/~emax/documents/axelsson2013using.pdf>)
@@ -140,25 +165,6 @@ arr (Data l) ixf = Data $ In $ Arr l v body
 
 (!) :: Data [a] -> Data Integer -> Data a
 Data arr ! Data i = Data $ In $ Ix arr i
-
-true, false :: Data Bool
-true  = Data $ In $ LitB True
-false = Data $ In $ LitB False
-
-iff :: Data Bool -> Data a -> Data a -> Data a
-iff (Data b) (Data x) (Data y) = Data $ In $ If b x y
-
-instance Num (Data Integer)
-  where
-    fromInteger = Data . In . LitI . fromInteger
-    Data x + Data y = Data $ In $ Add x y
-    Data x - Data y = Data $ In $ Sub x y
-    Data x * Data y = Data $ In $ Mul x y
-    abs    = error "abs not implemented for Data Integer"
-    signum = error "signum not implemented for Data Integer"
-
-(<=>) :: Eq a => Data a -> Data a -> Data Bool
-Data x <=> Data y = Data $ In $ Eq x y
 
 
 
