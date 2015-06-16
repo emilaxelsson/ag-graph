@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -11,6 +12,9 @@ module Paper where
 
 
 import Data.Foldable (Foldable (..))
+import qualified Data.Foldable as Foldable
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -18,11 +22,17 @@ import qualified Data.Set as Set
 import Data.Traversable (Traversable (..))
 import Control.Monad
 import Control.Applicative
-import System.IO.Unsafe
+import System.Directory (getTemporaryDirectory)
+import System.FilePath ((</>))
+import System.IO.Unsafe -- Only for testing
+import System.Process (system)
 
-
+import Variables
+import Dag.Internal
 import AG
 import Dag.AG
+import Dag.Rename
+import Dag.Render
 
 
 
@@ -194,10 +204,10 @@ data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 iIter n x y z = In (Iter' n x y z)
-iAdd x y = In (Add' x y)
-iVar x = In (Var' x)
-iLitI l = In (LitI' l)
-iLitB l = In (LitB' l)
+iAdd x y      = In (Add' x y)
+iVar x        = In (Var' x)
+iLitI l       = In (LitI' l)
+iLitB l       = In (LitB' l)
 
 typeOf ::  (?below :: a -> atts, Maybe Type :< atts) =>
            a -> Maybe Type
@@ -255,7 +265,6 @@ gt2 = iIter "x" x (iIter "x" x x y) y
 g2 :: Dag ExpF
 g2 = unsafePerformIO $ reifyDag gt2
 
-
 gt3 :: Tree ExpF
 gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
     where x = iLitI 10
@@ -264,7 +273,6 @@ gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
 
 g3 :: Dag ExpF
 g3 = unsafePerformIO $ reifyDag gt3
-
 
 
 typeTestG1 = typeInfG Map.empty g1
@@ -361,4 +369,133 @@ circTestT1 = delayTree (unravelDag i1) 3
 
 circTestG2 = delay i2 3
 circTestT2 = delayTree (unravelDag i2) 3
+
+
+
+--------------------------------------------------------------------------------
+-- Testing
+--------------------------------------------------------------------------------
+
+-- | To be able to render the DAGs using 'renderDag'
+instance ShowConstr ExpF
+  where
+    showConstr (LitB' b)       = show b
+    showConstr (LitI' i)       = show i
+    showConstr (Var' v)        = v
+    showConstr (Eq' _ _)       = "Eq"
+    showConstr (Add' _ _)      = "Eq"
+    showConstr (If' _ _ _)     = "Eq"
+    showConstr (Iter' v _ _ _) = "Iter " ++ v
+
+instance IsVar Name
+  where
+    newVar = ('v':) . show
+
+instance HasVars ExpF Name
+  where
+    isVar (Var' v) = Just v
+    isVar _        = Nothing
+
+    mkVar = Var'
+
+    bindsVars (Iter' v k i b)
+        = k |-> Set.empty
+        & i |-> Set.empty
+        & b |-> Set.singleton v
+    bindsVars _ = Dag.AG.empty
+
+    renameVars (Iter' v (k,kvs) (i,ivs) (b,bvs)) =
+        case (Set.toList kvs ++ Set.toList ivs, Set.toList bvs) of
+          ([],[v']) -> Iter' v' k i b
+    renameVars f = fmap fst f
+
+-- | Make the DAG well-scoped
+rename' :: Dag ExpF -> Dag ExpF
+rename' = rename (Just "")
+
+alphaEq' :: [(Name,Name)] -> Tree ExpF -> Tree ExpF -> Bool
+alphaEq' env (In (Var' v1)) (In (Var' v2)) =
+    case (lookup v1 env, lookup v2 env') of
+      (Nothing, Nothing)   -> v1==v2  -- Free variables
+      (Just v2', Just v1') -> v1==v1' && v2==v2'
+      _                    -> False
+  where
+    env' = [(v2,v1) | (v1,v2) <- env]
+alphaEq' env (In (Iter' v1 k1 i1 b1)) (In (Iter' v2 k2 i2 b2)) =
+    alphaEq' env k1 k2 && alphaEq' env i1 i2 && alphaEq' ((v1,v2):env) b1 b2
+alphaEq' env (In (LitB' b1))     (In (LitB' b2))     = b1==b2
+alphaEq' env (In (LitI' i1))     (In (LitI' i2))     = i1==i2
+alphaEq' env (In (Eq' a1 b1))    (In (Eq' a2 b2))    = alphaEq' env a1 a2 && alphaEq' env b1 b2
+alphaEq' env (In (Add' a1 b1))   (In (Add' a2 b2))   = alphaEq' env a1 a2 && alphaEq' env b1 b2
+alphaEq' env (In (If' c1 t1 f1)) (In (If' c2 t2 f2)) = alphaEq' env c1 c2 && alphaEq' env t1 t2 && alphaEq' env f1 f2
+alphaEq' env _ _ = False
+
+-- | Alpha-equivalence (for testing the renamer)
+alphaEq :: Tree ExpF -> Tree ExpF -> Bool
+alphaEq = alphaEq' []
+
+-- | Like 'flatten' but adds the root as a node in the graph
+flatten' :: Traversable f => Dag f -> (Node, IntMap (f Node), Int)
+flatten' d = (n, IntMap.insert n f m, n+1)
+  where
+    (f,m,n) = flatten d
+
+-- | List the variable occurrences along with their scopes. Each variable in the
+-- scope is paired with the node at which it is bound.
+scope :: Dag ExpF -> [(Name,Node)] -> [(Name, [(Name,Node)])]
+scope g env = go env r
+  where
+    (r,es,_) = flatten' g
+
+    go env n = case es IntMap.! n of
+      Var' v -> [(v,env)]
+      Iter' v k i b
+          -> go env k
+          ++ go env i
+          ++ go ((v,n):[vn | vn <- env, fst vn /= v]) b
+      f -> concat $ Foldable.toList $ fmap (go env) f
+
+groups :: Ord k => [(k,a)] -> [[a]]
+groups ks = Map.elems $ Map.fromListWith (++) [(k,[a]) | (k,a) <- ks]
+
+allEq :: Eq a => [a] -> Bool
+allEq []     = True
+allEq (a:as) = all (==a) as
+
+-- | Check that no single name is paired with two different nodes
+checkVar :: [(Name,Node)] -> Bool
+checkVar = all allEq . groups
+
+-- | Check for well-scopedness according to the paper
+isWellScoped :: Dag ExpF -> Bool
+isWellScoped g = all checkVar $ fmap concat $ groups sc
+  where
+    sc = scope g []
+
+-- | Renaming does not changes semantics
+prop_rename1 g = unravelDag g `alphaEq` unravelDag (rename' g)
+
+-- | Renaming does not decrease the number of edges
+prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename' g)
+
+-- | Renaming produces a well-scoped DAG
+prop_rename3 g = isWellScoped $ rename' g
+
+testRenamer
+    | allOK     = putStrLn "All tests passed"
+    | otherwise = putStrLn "Failed"
+  where
+    gs = [g1,g2,g3]
+    allOK = all prop_rename1 gs
+         && all prop_rename2 gs
+         && all prop_rename3 gs
+
+-- | Render a DAG as SVG
+astToSvg :: Dag ExpF -> IO ()
+astToSvg d = do
+    tmpd <- getTemporaryDirectory
+    let tmpf = tmpd </> "523452345234"
+    renderDag d tmpf
+    system $ "dot -Tsvg " ++ tmpf ++ " -o ast.svg"
+    return ()
 

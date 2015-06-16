@@ -15,6 +15,7 @@ library
                     Dag
                     Dag.AG
                     Dag.PAG
+                    Dag.Rename
                     Dag.Render
                     Dot
   Other-Modules:    Dag.Internal
@@ -22,6 +23,7 @@ library
                     PAG.Internal
                     Mapping
                     Tree
+                    Variables
                     Projection
                     PAG.Projection
                     PAG.Product
