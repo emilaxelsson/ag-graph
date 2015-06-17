@@ -39,7 +39,7 @@ import Paper (trueIntersection)
 
 type Name = Integer
 
-data ExpF a
+data Feldspar a
     = Var Name
     | LitB Bool
     | LitI Integer
@@ -55,7 +55,7 @@ data ExpF a
     | Ix a a        -- `Ix arr i`  means `arr !! i`
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
-instance ShowConstr ExpF
+instance ShowConstr Feldspar
   where
     showConstr (Var v)     = showVar v
     showConstr (LitB b)    = show b
@@ -78,7 +78,7 @@ instance IsVar Name
   where
     newVar = id
 
-instance HasVars ExpF Name
+instance HasVars Feldspar Name
   where
     isVar (Var v) = Just v
     isVar _       = Nothing
@@ -97,7 +97,7 @@ instance HasVars ExpF Name
           ([],[v']) -> Arr l v' f
     renameVars f = fmap fst f
 
-instance EqConstr ExpF
+instance EqConstr Feldspar
   where
     eqConstr (Var v1)    (Var v2)    = v1==v2
     eqConstr (LitB b1)   (LitB b2)   = b1==b2
@@ -115,7 +115,7 @@ instance EqConstr ExpF
     eqConstr _ _ = False
 
 -- | The type of Feldspar expressions
-newtype Data a = Data { unData :: Tree ExpF }
+newtype Data a = Data { unData :: Tree Feldspar }
 
 true, false :: Data Bool
 true  = Data $ In $ LitB True
@@ -145,7 +145,7 @@ iff (Data b) (Data x) (Data y) = Data $ In $ If b x y
 -- | Used to generate names for binding constructs; see \"Using Circular
 -- Programs for Higher-Order Syntax\" (ICFP 2013,
 -- <http://www.cse.chalmers.se/~emax/documents/axelsson2013using.pdf>)
-maxBV :: Tree ExpF -> Name
+maxBV :: Tree Feldspar -> Name
 maxBV (In (Let v a b)) = v `max` maxBV a
 maxBV (In (Arr l v f)) = v `max` maxBV l
 maxBV (In f)           = maximum $ (0:) $ Foldable.toList $ fmap maxBV f
@@ -217,10 +217,10 @@ type SymTab env = Env (CompExp env)
 emptyTab :: SymTab ()
 emptyTab = Map.empty
 
-(|--) :: SymTab env -> Tree ExpF -> Maybe (CompExp env)
+(|--) :: SymTab env -> Tree Feldspar -> Maybe (CompExp env)
 gamma |-- In f = gamma |- f
 
-(|-) :: SymTab env -> ExpF (Tree ExpF) -> Maybe (CompExp env)
+(|-) :: SymTab env -> Feldspar (Tree Feldspar) -> Maybe (CompExp env)
 gamma |- Var v   = Map.lookup v gamma
 gamma |- LitB b  = return $ (\_ -> b) ::: BoolType
 gamma |- LitI i  = return $ (\_ -> i) ::: IntType
@@ -266,8 +266,8 @@ ext (v,t) gamma = Map.insert v (fst ::: t) (fmap shift gamma)
 compileIntOp
     :: (Integer -> Integer -> Integer)
     -> SymTab env
-    -> Tree ExpF
-    -> Tree ExpF
+    -> Tree Feldspar
+    -> Tree Feldspar
     -> Maybe (CompExp env)
 compileIntOp op gamma a b = do
     a' ::: IntType <- gamma |-- a
@@ -352,10 +352,10 @@ rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
 -- * Transformation
 --------------------------------------------------------------------------------
 
-rename' :: Dag ExpF -> Dag ExpF
+rename' :: Dag Feldspar -> Dag Feldspar
 rename' = rename (Just (0 :: Name))
 
-alphaEq' :: Tree ExpF -> Tree ExpF -> Bool
+alphaEq' :: Tree Feldspar -> Tree Feldspar -> Bool
 alphaEq' = alphaEq (Nothing :: Maybe Name)
 
 -- | Size of an expression = over-approximation of the set of values it might
@@ -386,7 +386,7 @@ lookEnv n env = case Map.lookup n env of
 sizeOf ::  (?below :: a -> atts, Size :< atts) => a -> Size
 sizeOf = below
 
-sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn ExpF atts Size
+sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn Feldspar atts Size
 sizeInfS (Var v)   = lookEnv v above
 sizeInfS (LitB _)  = []
 sizeInfS (LitI i)  = [fromInteger i]
@@ -403,7 +403,7 @@ sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
 sizeInfS (Ix arr i)  = tail (sizeOf arr)
 
-sizeInfI :: (Size :< atts) => Inh ExpF atts (Env Size)
+sizeInfI :: (Size :< atts) => Inh Feldspar atts (Env Size)
 sizeInfI (Let v a b) = b |-> Map.insert v (sizeOf a) above
 sizeInfI (Arr l v b) = b |-> Map.insert v (sizeArrIx (sizeOf l)) above
 sizeInfI _           = o
@@ -434,7 +434,7 @@ valueOfI a = do
     Value IntType i <- below a
     return i
 
-constFoldS :: (Size :< atts) => Syn ExpF atts (Maybe Value)
+constFoldS :: (Size :< atts) => Syn Feldspar atts (Maybe Value)
 constFoldS f | Just i <- viewSingleton above = Just $ Value IntType i
 constFoldS (LitB b) = Just $ Value BoolType b
 constFoldS (Eq a b)
@@ -453,10 +453,10 @@ constFoldS (If b t f)
     | Just (Value BoolType b') <- valueOf b = valueOf $ if b' then t else f
 constFoldS _ = Nothing
 
-sizeInf :: Tree ExpF -> Size
+sizeInf :: Tree Feldspar -> Size
 sizeInf = fst . runAG (sizeInfS |*| constFoldS) sizeInfI (const Map.empty)
 
-sizeInfDag :: Dag ExpF -> Size
+sizeInfDag :: Dag Feldspar -> Size
 sizeInfDag
     = fst
     . runAGDag
@@ -467,7 +467,7 @@ sizeInfDag
     . rename'
 
 simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
-    Rewrite ExpF atts ExpF
+    Rewrite Feldspar atts Feldspar
 simplifier _
     | Just (Value BoolType b) <- above = In $ LitB b
     | Just (Value IntType i)  <- above = In $ LitI i
@@ -497,14 +497,14 @@ simplifier (If c t f)
     | Just (Value BoolType b) <- valueOf c = Ret $ if b then t else f
 simplifier f = simpCxt f
 
-simplify :: Tree ExpF -> Tree ExpF
+simplify :: Tree Feldspar -> Tree Feldspar
 simplify = snd . runRewrite
     (sizeInfS |*| constFoldS)
     sizeInfI
     simplifier
     (const Map.empty)
 
-simplifyDag :: Dag ExpF -> Dag ExpF
+simplifyDag :: Dag Feldspar -> Dag Feldspar
 simplifyDag
     = snd
     . runRewriteDag
