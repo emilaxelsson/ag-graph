@@ -486,7 +486,7 @@ prop_simplifyEval d
     | Wit <- witEq (typeRep :: Type a)
     = eval d == eval (Data $ simplify $ unData d)
 
--- | 'simplify' and 'simplifyDag' give the same result
+-- | 'simplify' and 'simplifyDag' give equivalent results
 prop_simplifyDag :: Data a -> Bool
 prop_simplifyDag d = dsimp `alphaEq'` dsimpg
   where
@@ -548,6 +548,15 @@ ex2 = a ! 3 + b ! 2
 test2      = astToSvg ex2
 test2_simp = astToSvg_simp ex2
 
+ex3 :: Data [Integer]
+ex3 = arr 100 $ \i -> a i ! minn i 10 + b i ! minn i 20
+  where
+    a i = arr (i+1) $ \j -> j*i
+    b i = arr (i+1) $ \j -> j*i*j
+
+test3      = astToSvg ex3
+test3_simp = astToSvg_simp ex3
+
 data Ex c
   where
     Ex :: Typeable a => c a -> Ex c
@@ -556,7 +565,7 @@ testAll
     | allOK     = putStrLn "All tests passed"
     | otherwise = putStrLn "Failed"
   where
-    es = [Ex ex1, Ex ex2]
+    es = [Ex ex1, Ex ex2, Ex ex3]
     allOK = all (\(Ex e) -> prop_sizeInf      e) es
          && all (\(Ex e) -> prop_sizeInfDag   e) es
          && all (\(Ex e) -> prop_simplifyEval e) es
