@@ -312,18 +312,9 @@ inRange i r = fromInteger i `isSubRangeOf` r
 instance Num (Maybe Integer)
   where
     fromInteger = Just
-    Nothing + _     = Nothing
-    _ + Nothing     = Nothing
-    Just a + Just b = Just (a+b)
-
-    Nothing - _     = Nothing
-    _ - Nothing     = Nothing
-    Just a - Just b = Just (a-b)
-
-    Nothing * _     = Nothing
-    _ * Nothing     = Nothing
-    Just a * Just b = Just (a*b)
-
+    (+) = liftA2 (+)
+    (-) = liftA2 (-)
+    (*) = liftA2 (*)
     abs    = error "abs not implemented for Maybe Integer"
     signum = error "signum not implemented for Maybe Integer"
 
