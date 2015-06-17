@@ -575,27 +575,30 @@ astToSvg_simp d = do
 --------------------------------------------------------------------------------
 
 ex1 :: Data [Integer]
-ex1 = arr 10 $ \i -> let a = i+tre+4 in iff (a<=>tre) (let b = a+2 in b+b*b) (a+tre)
-  where
-    tre = 0*4
+ex1 = let a = 2+3
+      in  arr a $ \i -> a + a*i
 
 test1      = astToSvg ex1
 test1_simp = astToSvg_simp ex1
 
-ex2 :: Data Integer
-ex2 = a ! 3 + b ! 2
-  where
-    a = arr 10 $ \i -> i*i
-    b = arr 20 $ \i -> i*i
+ex2 :: Data [Integer]
+ex2 =
+    arr 10 $ \i ->
+      let x = maxx 20 i + i
+          a = arr (i+30) $ \j -> j*x
+          b = arr (i+30) $ \k -> k-x
+      in  a!2 + b!3
 
 test2      = astToSvg ex2
 test2_simp = astToSvg_simp ex2
 
 ex3 :: Data [Integer]
-ex3 = arr 100 $ \i -> a i ! minn i 10 + b i ! minn i 20
-  where
-    a i = arr (i+1) $ \j -> j*i
-    b i = arr (i+1) $ \j -> j*i*j
+ex3 =
+    arr 10 $ \i ->
+      let x = maxx 20 i
+          a = arr (i+x) $ \j -> j*x
+          b = arr (i+x) $ \k -> k-x
+      in  iff (a!2 <=> (b!3+800)) 45 56
 
 test3      = astToSvg ex3
 test3_simp = astToSvg_simp ex3
