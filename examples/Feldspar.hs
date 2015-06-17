@@ -386,16 +386,18 @@ lookEnv n env = case Map.lookup n env of
 sizeOf ::  (?below :: a -> atts, Size :< atts) => a -> Size
 sizeOf = below
 
-sizeInfS :: (Env Size :< atts) => Syn ExpF atts Size
-sizeInfS (Var v)     = lookEnv v above
-sizeInfS (LitB _)    = []
-sizeInfS (LitI i)    = [fromInteger i]
-sizeInfS (Add a b)   = zipWith (+) (sizeOf a) (sizeOf b)
-sizeInfS (Sub a b)   = zipWith (-) (sizeOf a) (sizeOf b)
-sizeInfS (Mul a b)   = zipWith (*) (sizeOf a) (sizeOf b)
-sizeInfS (Eq a b)    = []
-sizeInfS (Min a b)   = zipWith rangeMin (sizeOf a) (sizeOf b)
-sizeInfS (Max a b)   = zipWith rangeMax (sizeOf a) (sizeOf b)
+sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn ExpF atts Size
+sizeInfS (Var v)   = lookEnv v above
+sizeInfS (LitB _)  = []
+sizeInfS (LitI i)  = [fromInteger i]
+sizeInfS (Add a b) = zipWith (+) (sizeOf a) (sizeOf b)
+sizeInfS (Sub a b) = zipWith (-) (sizeOf a) (sizeOf b)
+sizeInfS (Mul a b) = zipWith (*) (sizeOf a) (sizeOf b)
+sizeInfS (Eq a b)  = []
+sizeInfS (Min a b) = zipWith rangeMin (sizeOf a) (sizeOf b)
+sizeInfS (Max a b) = zipWith rangeMax (sizeOf a) (sizeOf b)
+sizeInfS (If b t f)
+    | Just (Value BoolType b') <- valueOf b = sizeOf $ if b' then t else f
 sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
 sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
@@ -411,35 +413,74 @@ sizeInfI _           = o
 sizeArrIx :: Size -> Size
 sizeArrIx [szl] = [(0, upper (szl-1))]
 
-sizeInf :: Tree ExpF -> Size
-sizeInf = runAG sizeInfS sizeInfI (\ _ -> Map.empty)
-
-sizeInfDag :: Dag ExpF -> Size
-sizeInfDag
-    = runAGDag trueIntersection sizeInfS sizeInfI (\ _ -> Map.empty)
-    . rename'
-
 viewSingleton :: Size -> Maybe Integer
 viewSingleton [(Just l, Just u)] | l == u = Just l
 viewSingleton _ = Nothing
 
-simplifier :: (Size :< atts, Env Size :< atts) => Rewrite ExpF atts ExpF
-simplifier (Add a b)
-    | Just 0 <- viewSingleton (sizeOf a) = Ret b
-    | Just 0 <- viewSingleton (sizeOf b) = Ret a
-simplifier (Sub a b)
-    | Just 0 <- viewSingleton (sizeOf b) = Ret a
-simplifier (Mul a b)
-    | Just 0 <- viewSingleton (sizeOf a) = In $ LitI 0
-    | Just 0 <- viewSingleton (sizeOf b) = In $ LitI 0
-    | Just 1 <- viewSingleton (sizeOf a) = Ret b
-    | Just 1 <- viewSingleton (sizeOf b) = Ret a
-simplifier (Eq a b)
-    | Just True <- liftA2 (<=) ua lb = In $ LitB False
-    | Just True <- liftA2 (<=) ub la = In $ LitB False
+data Value
+  where
+    Value :: Type a -> a -> Value
+
+valueOf :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Value
+valueOf = below
+
+valueOfB :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Bool
+valueOfB a = do
+    Value BoolType b <- below a
+    return b
+
+valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Integer
+valueOfI a = do
+    Value IntType i <- below a
+    return i
+
+constFoldS :: (Size :< atts) => Syn ExpF atts (Maybe Value)
+constFoldS f | Just i <- viewSingleton above = Just $ Value IntType i
+constFoldS (LitB b) = Just $ Value BoolType b
+constFoldS (Eq a b)
+    | Just (Value ta a') <- valueOf a
+    , Just (Value tb b') <- valueOf b
+    , Just Wit           <- typeEq ta tb
+    , Wit                <- witEq ta
+    = Just $ Value BoolType (a' == b')
+constFoldS (Eq a b)
+    | Just True <- liftA2 (<=) ua lb = Just $ Value BoolType False
+    | Just True <- liftA2 (<=) ub la = Just $ Value BoolType False
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
+constFoldS (If b t f)
+    | Just (Value BoolType b') <- valueOf b = valueOf $ if b' then t else f
+constFoldS _ = Nothing
+
+sizeInf :: Tree ExpF -> Size
+sizeInf = fst . runAG (sizeInfS |*| constFoldS) sizeInfI (const Map.empty)
+
+sizeInfDag :: Dag ExpF -> Size
+sizeInfDag
+    = fst
+    . runAGDag
+        trueIntersection
+        (sizeInfS |*| constFoldS)
+        sizeInfI
+        (const Map.empty)
+    . rename'
+
+simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
+    Rewrite ExpF atts ExpF
+simplifier _
+    | Just (Value BoolType b) <- above = In $ LitB b
+    | Just (Value IntType i)  <- above = In $ LitI i
+simplifier (Add a b)
+    | Just 0 <- valueOfI a = Ret b
+    | Just 0 <- valueOfI b = Ret a
+simplifier (Sub a b)
+    | Just 0 <- valueOfI b = Ret a
+simplifier (Mul a b)
+    | Just 0 <- valueOfI a = In $ LitI 0
+    | Just 0 <- valueOfI b = In $ LitI 0
+    | Just 1 <- valueOfI a = Ret b
+    | Just 1 <- valueOfI b = Ret a
 simplifier (Min a b)
     | Just True <- liftA2 (<=) ua lb = Ret a
     | Just True <- liftA2 (<=) ub la = Ret b
@@ -452,11 +493,13 @@ simplifier (Max a b)
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
+simplifier (If c t f)
+    | Just (Value BoolType b) <- valueOf c = Ret $ if b then t else f
 simplifier f = simpCxt f
 
 simplify :: Tree ExpF -> Tree ExpF
 simplify = snd . runRewrite
-    sizeInfS
+    (sizeInfS |*| constFoldS)
     sizeInfI
     simplifier
     (const Map.empty)
@@ -466,7 +509,7 @@ simplifyDag
     = snd
     . runRewriteDag
         trueIntersection
-        sizeInfS
+        (sizeInfS |*| constFoldS)
         sizeInfI
         simplifier
         (const Map.empty)
