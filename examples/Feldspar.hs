@@ -331,11 +331,11 @@ instance Num Range
 
 -- | Propagate ranges over the 'min' function
 rangeMin :: Range -> Range -> Range
-rangeMin (l1,u1) (l2,u2) = (min l1 l2, min u1 u2)
+rangeMin (l1,u1) (l2,u2) = (liftA2 min l1 l2, liftA2 min u1 u2)
 
 -- | Propagate ranges over the 'max' function
 rangeMax :: Range -> Range -> Range
-rangeMax (l1,u1) (l2,u2) = (max l1 l2, max u1 u2)
+rangeMax (l1,u1) (l2,u2) = (liftA2 max l1 l2, liftA2 max u1 u2)
 
 
 
