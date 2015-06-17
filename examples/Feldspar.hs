@@ -343,11 +343,11 @@ rangeMax (l1,u1) (l2,u2) = (liftA2 max l1 l2, liftA2 max u1 u2)
 -- * Transformation
 --------------------------------------------------------------------------------
 
-rename' :: Dag Feldspar -> Dag Feldspar
-rename' = rename (Just (0 :: Name))
+renameFeld :: Dag Feldspar -> Dag Feldspar
+renameFeld = rename (Just (0 :: Name))
 
-alphaEq' :: Tree Feldspar -> Tree Feldspar -> Bool
-alphaEq' = alphaEq (Nothing :: Maybe Name)
+alphaEqFeld :: Tree Feldspar -> Tree Feldspar -> Bool
+alphaEqFeld = alphaEq (Nothing :: Maybe Name)
 
 -- | Size of an expression = over-approximation of the set of values it might
 -- take on
@@ -455,7 +455,7 @@ sizeInfDag
         (sizeInfS |*| constFoldS)
         sizeInfI
         (const Map.empty)
-    . rename'
+    . renameFeld
 
 simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
     Rewrite Feldspar atts Feldspar
@@ -504,7 +504,7 @@ simplifyDag
         sizeInfI
         simplifier
         (const Map.empty)
-    . rename'
+    . renameFeld
 
 -- | 'sizeInf' is an over-approximation of 'eval'
 prop_sizeInf :: Typeable a => Data a -> Bool
@@ -522,7 +522,7 @@ prop_simplifyEval d
 
 -- | 'simplify' and 'simplifyDag' give equivalent results
 prop_simplifyDag :: Data a -> Bool
-prop_simplifyDag d = dsimp `alphaEq'` dsimpg
+prop_simplifyDag d = dsimp `alphaEqFeld` dsimpg
   where
     dsimp  = simplify (unData d)
     dsimpg = unravelDag $ simplifyDag $ unsafePerformIO $ reifyDag $ unData d
