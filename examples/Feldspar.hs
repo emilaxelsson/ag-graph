@@ -60,7 +60,6 @@ instance ShowConstr ExpF
     showConstr (Var v)     = showVar v
     showConstr (LitB b)    = show b
     showConstr (LitI i)    = show i
-    showConstr (Eq _ _)    = "Eq"
     showConstr (Add _ _)   = "Add"
     showConstr (Sub _ _)   = "Sub"
     showConstr (Mul _ _)   = "Mul"
@@ -87,7 +86,7 @@ instance HasVars ExpF Name
     mkVar = Var
 
     bindsVars (Let v a b) = a |-> Set.empty & b |-> Set.singleton v
-    bindsVars (Arr l v f) = l |-> Set.empty & f |-> Set.singleton v
+    bindsVars (Arr l v b) = l |-> Set.empty & b |-> Set.singleton v
     bindsVars _           = Dag.AG.empty
 
     renameVars (Let v (a,avs) (b,bvs)) =
