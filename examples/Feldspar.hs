@@ -574,6 +574,7 @@ astToSvg_simp d = do
 -- * Testing
 --------------------------------------------------------------------------------
 
+-- Demonstrate simplification of the shared node `a`
 ex1 :: Data [Integer]
 ex1 = let a = 2+3
       in  arr a $ \i -> a + a*i
@@ -581,6 +582,9 @@ ex1 = let a = 2+3
 test1      = astToSvg ex1
 test1_simp = astToSvg_simp ex1
 
+-- Demonstrate simplification of the shared node `x`. `x` appears in different
+-- variable environments, and its simplification makes use of the size
+-- information for variable `i`.
 ex2 :: Data [Integer]
 ex2 =
     arr 10 $ \i ->
@@ -592,13 +596,15 @@ ex2 =
 test2      = astToSvg ex2
 test2_simp = astToSvg_simp ex2
 
+-- Demonstrate size-based simplification. The ranges of the expressions `a!2`
+-- and `b!3+800` are disjoint, so the `iff` expression reduces to `x`.
 ex3 :: Data [Integer]
 ex3 =
     arr 10 $ \i ->
       let x = maxx 20 i
           a = arr (i+x) $ \j -> j*x
           b = arr (i+x) $ \k -> k-x
-      in  iff (a!2 <=> (b!3+800)) 45 56
+      in  iff (a!2 <=> (b!3+800)) 45 x
 
 test3      = astToSvg ex3
 test3_simp = astToSvg_simp ex3
