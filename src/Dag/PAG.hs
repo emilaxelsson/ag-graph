@@ -86,6 +86,7 @@ runPAGDag res syn inh dinit Dag {edges,root,nodeCount} = result where
       newEdges <- newSTRef (IntMap.empty :: IntMap (g (Free g Node)))
       let -- This function is applied to each edge
           iter (node,s) = do
+             writeSTRef count 0
              let d = fromJust $ dmapFin Vec.! node
              u <- run d s
              MVec.unsafeWrite umap node u
@@ -111,7 +112,6 @@ runPAGDag res syn inh dinit Dag {edges,root,nodeCount} = result where
                                        Just d' -> d'
                              u' <- runF d' s
                              return (Numbered i (u' :*: d'))
-             writeSTRef count 0
              result <- Traversable.mapM run' t
              return u
           -- recurses through the tree structure
