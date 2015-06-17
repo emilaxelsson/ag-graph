@@ -37,8 +37,14 @@ import Paper (trueIntersection)
 
 
 
+--------------------------------------------------------------------------------
+-- * Feldspar expressions
+--------------------------------------------------------------------------------
+
+-- | Variable names
 type Name = Integer
 
+-- | Functor for Feldspar expressions
 data Feldspar a
     = Var Name
     | LitB Bool
@@ -55,6 +61,7 @@ data Feldspar a
     | Ix a a        -- `Ix arr i`  means `arr !! i`
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
+-- | For rendering
 instance ShowConstr Feldspar
   where
     showConstr (Var v)     = showVar v
@@ -114,9 +121,16 @@ instance EqConstr Feldspar
     eqConstr (Ix _ _)    (Ix _ _)    = True
     eqConstr _ _ = False
 
+
+
+--------------------------------------------------------------------------------
+-- * Feldspar front end
+--------------------------------------------------------------------------------
+
 -- | The type of Feldspar expressions
 newtype Data a = Data { unData :: Tree Feldspar }
 
+-- | Boolean constants
 true, false :: Data Bool
 true  = Data $ In $ LitB True
 false = Data $ In $ LitB False
@@ -130,16 +144,24 @@ instance Num (Data Integer)
     abs    = error "abs not implemented for Data Integer"
     signum = error "signum not implemented for Data Integer"
 
+-- | Equality
 (<=>) :: Eq a => Data a -> Data a -> Data Bool
 Data x <=> Data y = Data $ In $ Eq x y
 
+-- | Minimum of two integers
 minn :: Data Integer -> Data Integer -> Data Integer
 minn (Data a) (Data b) = Data $ In $ Min a b
 
+-- | Maximum of two integers
 maxx :: Data Integer -> Data Integer -> Data Integer
 maxx (Data a) (Data b) = Data $ In $ Max a b
 
-iff :: Data Bool -> Data a -> Data a -> Data a
+-- | Conditional expression
+iff
+    :: Data Bool  -- ^ Condition
+    -> Data a     -- ^ True branch
+    -> Data a     -- ^ False branch
+    -> Data a
 iff (Data b) (Data x) (Data y) = Data $ In $ If b x y
 
 -- | Used to generate names for binding constructs; see \"Using Circular
@@ -150,18 +172,24 @@ maxBV (In (Let v a b)) = v `max` maxBV a
 maxBV (In (Arr l v f)) = v `max` maxBV l
 maxBV (In f)           = maximum $ (0:) $ Foldable.toList $ fmap maxBV f
 
+-- | Share a value in a computation
 share :: Data a -> (Data a -> Data b) -> Data b
 share (Data a) f = Data $ In $ Let v a body
   where
     v    = succ $ maxBV body
     body = unData $ f $ Data $ In $ Var v
 
-arr :: Data Integer -> (Data Integer -> Data a) -> Data [a]
+-- | Array construction
+arr
+    :: Data Integer              -- ^ Length
+    -> (Data Integer -> Data a)  -- ^ Index mapping
+    -> Data [a]
 arr (Data l) ixf = Data $ In $ Arr l v body
   where
     v    = succ $ maxBV body
     body = unData $ ixf $ Data $ In $ Var v
 
+-- | Array indexing
 (!) :: Data [a] -> Data Integer -> Data a
 Data arr ! Data i = Data $ In $ Ix arr i
 
@@ -287,6 +315,7 @@ eval (Data a) = (\(Just a) -> a) $ do
 -- * Range propagation
 --------------------------------------------------------------------------------
 
+-- | (lower bound, upper bound)
 type Range = (Maybe Integer, Maybe Integer)
 
 -- | Lower bound of a range
@@ -343,9 +372,11 @@ rangeMax (l1,u1) (l2,u2) = (liftA2 max l1 l2, liftA2 max u1 u2)
 -- * Transformation
 --------------------------------------------------------------------------------
 
+-- | Make a Feldspar DAG well-scoped
 renameFeld :: Dag Feldspar -> Dag Feldspar
 renameFeld = rename (Just (0 :: Name))
 
+-- | Alpha-equivalence of Feldspar trees
 alphaEqFeld :: Tree Feldspar -> Tree Feldspar -> Bool
 alphaEqFeld = alphaEq (Nothing :: Maybe Name)
 
@@ -369,15 +400,19 @@ inSize = go (typeRep :: Type a)
     go (ListType t) as (r:rs) =
         inRange (genericLength as) r && all (\a -> go t a rs) as
 
+-- | Lookup the size of a given variable in the environment
 lookEnv :: Name -> Env Size -> Size
 lookEnv n env = case Map.lookup n env of
     Nothing -> error $ "lookEnv: variable " ++ show n ++ " not in scope"
     Just sz -> sz
 
+-- | Get the inferred size of a sub-expression
 sizeOf ::  (?below :: a -> atts, Size :< atts) => a -> Size
 sizeOf = below
 
+-- | Compute the synthesized 'Size' attribute for a node
 sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn Feldspar atts Size
+-- Sizes of variables are obtained from the environment
 sizeInfS (Var v)   = lookEnv v above
 sizeInfS (LitB _)  = []
 sizeInfS (LitI i)  = [fromInteger i]
@@ -387,6 +422,7 @@ sizeInfS (Mul a b) = zipWith (*) (sizeOf a) (sizeOf b)
 sizeInfS (Eq a b)  = []
 sizeInfS (Min a b) = zipWith rangeMin (sizeOf a) (sizeOf b)
 sizeInfS (Max a b) = zipWith rangeMax (sizeOf a) (sizeOf b)
+-- Reduce If when the condition is a constant:
 sizeInfS (If b t f)
     | Just (Value BoolType b') <- valueOf b = sizeOf $ if b' then t else f
 sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
@@ -394,8 +430,12 @@ sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
 sizeInfS (Ix arr i)  = tail (sizeOf arr)
 
+-- | Compute the inherited variable environment attribute for the
+-- sub-expressions of a node
 sizeInfI :: (Size :< atts) => Inh Feldspar atts (Env Size)
+-- Insert `v` with the size of `a` into the environment:
 sizeInfI (Let v a b) = b |-> Map.insert v (sizeOf a) above
+-- Insert `v` with the size [0 .. l-1] into the environment:
 sizeInfI (Arr l v b) = b |-> Map.insert v (sizeArrIx (sizeOf l)) above
 sizeInfI _           = o
 
@@ -404,49 +444,61 @@ sizeInfI _           = o
 sizeArrIx :: Size -> Size
 sizeArrIx [szl] = [(0, upper (szl-1))]
 
+-- | Extract an integer when the size is a singleton range
 viewSingleton :: Size -> Maybe Integer
 viewSingleton [(Just l, Just u)] | l == u = Just l
 viewSingleton _ = Nothing
 
+-- | Union type for constant values
 data Value
   where
     Value :: Type a -> a -> Value
 
+-- | Get the folded value of a sub-expression
 valueOf :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Value
 valueOf = below
 
+-- | Get the folded value of a sub-expression, projected to 'Bool'
 valueOfB :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Bool
 valueOfB a = do
     Value BoolType b <- below a
     return b
 
+-- | Get the folded value of a sub-expression, projected to 'Integer'
 valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Integer
 valueOfI a = do
     Value IntType i <- below a
     return i
 
+-- | Compute the synthesized constant value of a node
 constFoldS :: (Size :< atts) => Syn Feldspar atts (Maybe Value)
+-- All integer cases are handled by getting the result from size inference:
 constFoldS f | Just i <- viewSingleton above = Just $ Value IntType i
 constFoldS (LitB b) = Just $ Value BoolType b
+-- Constant folding for Eq:
 constFoldS (Eq a b)
     | Just (Value ta a') <- valueOf a
     , Just (Value tb b') <- valueOf b
     , Just Wit           <- typeEq ta tb
     , Wit                <- witEq ta
     = Just $ Value BoolType (a' == b')
+-- Reduce Eq when sizes of operands are disjoint:
 constFoldS (Eq a b)
     | Just True <- liftA2 (<=) ua lb = Just $ Value BoolType False
     | Just True <- liftA2 (<=) ub la = Just $ Value BoolType False
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
+-- Reduce If when the condition is a constant:
 constFoldS (If b t f)
     | Just (Value BoolType b') <- valueOf b = valueOf $ if b' then t else f
 constFoldS _ = Nothing
 
+-- | Size inference for a Feldspar expression tree
 sizeInf :: Tree Feldspar -> Size
 sizeInf = fst . runAG (sizeInfS |*| constFoldS) sizeInfI (const Map.empty)
 
+-- | Size inference for a Feldspar expression DAG
 sizeInfDag :: Dag Feldspar -> Size
 sizeInfDag
     = fst
@@ -457,8 +509,10 @@ sizeInfDag
         (const Map.empty)
     . renameFeld
 
+-- | Simplify a node based on size inference and constant folding
 simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
     Rewrite Feldspar atts Feldspar
+-- Rewrite to a literal when constant folding says so:
 simplifier _
     | Just (Value BoolType b) <- above = In $ LitB b
     | Just (Value IntType i)  <- above = In $ LitI i
@@ -472,22 +526,26 @@ simplifier (Mul a b)
     | Just 0 <- valueOfI b = In $ LitI 0
     | Just 1 <- valueOfI a = Ret b
     | Just 1 <- valueOfI b = Ret a
+-- Reduce Min when sizes of operands are disjoint:
 simplifier (Min a b)
     | Just True <- liftA2 (<=) ua lb = Ret a
     | Just True <- liftA2 (<=) ub la = Ret b
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
+-- Reduce Max when sizes of operands are disjoint:
 simplifier (Max a b)
     | Just True <- liftA2 (<=) ua lb = Ret b
     | Just True <- liftA2 (<=) ub la = Ret a
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
+-- Reduce If when the condition is a constant:
 simplifier (If c t f)
     | Just (Value BoolType b) <- valueOf c = Ret $ if b then t else f
 simplifier f = simpCxt f
 
+-- | Simplify a Feldspar expression tree
 simplify :: Tree Feldspar -> Tree Feldspar
 simplify = snd . runRewrite
     (sizeInfS |*| constFoldS)
@@ -495,6 +553,7 @@ simplify = snd . runRewrite
     simplifier
     (const Map.empty)
 
+-- | Simplify a Feldspar expression DAG
 simplifyDag :: Dag Feldspar -> Dag Feldspar
 simplifyDag
     = snd
@@ -533,16 +592,24 @@ prop_simplifyDag d = dsimp `alphaEqFeld` dsimpg
 -- * Render AST
 --------------------------------------------------------------------------------
 
+-- | Render a Feldspar expression as a Dot graph that captures the implicit
+-- sharing in the expression
 renderAST :: Data a -> FilePath -> IO ()
 renderAST d file = do
     dag <- reifyDag $ unData d
     renderDag dag file
 
+-- | Simplify and render a Feldspar expression as a Dot graph that captures the
+-- implicit sharing in the expression
 renderAST_simp :: Data a -> FilePath -> IO ()
 renderAST_simp d file = do
     dag <- reifyDag $ unData d
     renderDag (simplifyDag dag) file
 
+-- | Render a Feldspar expression as an SVG graph that captures the implicit
+-- sharing in the expression. The resulting file is called `ast.svg`.
+--
+-- This function requires Graphviz to be installed.
 astToSvg :: Data a -> IO ()
 astToSvg d = do
     tmpd <- getTemporaryDirectory
@@ -551,6 +618,10 @@ astToSvg d = do
     system $ "dot -Tsvg " ++ tmpf ++ " -o ast.svg"
     return ()
 
+-- | Simplify and render a Feldspar expression as an SVG graph that captures the
+-- implicit sharing in the expression. The resulting file is called `ast.svg`.
+--
+-- This function requires Graphviz to be installed.
 astToSvg_simp :: Data a -> IO ()
 astToSvg_simp d = do
     tmpd <- getTemporaryDirectory
