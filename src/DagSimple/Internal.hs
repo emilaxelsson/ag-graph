@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 -- |
--- Module      :  Dag.Internal
+-- Module      :  DagSimple.Internal
 -- Copyright   :  (c) 2014 Patrick Bahr, Emil Axelsson
 -- License     :  BSD3
 -- Maintainer  :  Patrick Bahr <paba@di.ku.dk>
@@ -13,7 +13,7 @@
 --
 --------------------------------------------------------------------------------
 
-module Dag.Internal where
+module DagSimple.Internal where
 
 import Tree
 import Data.IntMap (IntMap)
@@ -25,19 +25,17 @@ type Node = Int
 
 -- | The type of the compact edge representation used in a 'Dag'.
 
-type Edges f = IntMap (f (Free f Node))
+type Edges f = IntMap (f Node)
 
 -- | The type of directed acyclic graphs (DAGs). 'Dag's are used as a
 -- compact representation of 'Term's.
 
 data Dag f = Dag 
-    { root      :: f (Free f Node) -- ^ the entry point for the DAG
+    { root      :: Node -- ^ the entry point for the DAG
     , edges     :: Edges f         -- ^ the edges of the DAG
     , nodeCount :: Int             -- ^ the total number of nodes in the DAG
     }
 
-
-
 -- | Construct a dag
-mkDag :: f (Free f Node) -> [(Node, f (Free f Node))] -> Dag f
+mkDag :: Node -> [(Node, f Node)] -> Dag f
 mkDag r es = Dag r (IntMap.fromList es) (maximum (map fst es) + 1)
