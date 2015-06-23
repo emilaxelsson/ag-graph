@@ -199,115 +199,77 @@ Data arr ! Data i = Data $ In $ Ix arr i
 -- * Evaluation
 --------------------------------------------------------------------------------
 
--- This section implements "typed compilation". See "Efficient Evaluation for
--- Untyped and Compositional Representations of Expressions"
--- (<http://www.cse.chalmers.se/~emax/documents/axelsson2014efficient.pdf>)
+type Env a = Map Name a
 
-data Type a
-  where
-    BoolType :: Type Bool
-    IntType  :: Type Integer
-    ListType :: Type a -> Type [a]
+data Value
+    = B Bool
+    | I Integer
+    | L [Value]
+  deriving (Eq, Show)
 
 class Typeable a
   where
-    typeRep :: Type a
+    toVal   :: a -> Value
+    fromVal :: Value -> Maybe a
 
-instance               Typeable Bool    where typeRep = BoolType
-instance               Typeable Integer where typeRep = IntType
-instance Typeable a => Typeable [a]     where typeRep = ListType typeRep
-
-data Wit c
+instance Typeable Bool
   where
-    Wit :: c => Wit c
+    toVal = B
+    fromVal (B b) = Just b
+    fromVal _     = Nothing
 
-typeEq :: Type a -> Type b -> Maybe (Wit (a ~ b))
-typeEq BoolType BoolType = Just Wit
-typeEq IntType  IntType  = Just Wit
-typeEq (ListType ta) (ListType tb) = do
-    Wit <- typeEq ta tb
-    return Wit
-
-witEq :: Type a -> Wit (Eq a)
-witEq BoolType = Wit
-witEq IntType  = Wit
-witEq (ListType t)
-    | Wit <- witEq t = Wit
-
-data CompExp env where
-    (:::) :: (env -> a) -> Type a -> CompExp env
-
--- | Environment for variables in scope
-type Env a = Map Name a
-
-type SymTab env = Env (CompExp env)
-
-emptyTab :: SymTab ()
-emptyTab = Map.empty
-
-(|--) :: SymTab env -> Tree Feldspar -> Maybe (CompExp env)
-gamma |-- In f = gamma |- f
-
-(|-) :: SymTab env -> Feldspar (Tree Feldspar) -> Maybe (CompExp env)
-gamma |- Var v   = Map.lookup v gamma
-gamma |- LitB b  = return $ (\_ -> b) ::: BoolType
-gamma |- LitI i  = return $ (\_ -> i) ::: IntType
-gamma |- Add a b = compileIntOp (+) gamma a b
-gamma |- Sub a b = compileIntOp (-) gamma a b
-gamma |- Mul a b = compileIntOp (*) gamma a b
-gamma |- Min a b = compileIntOp min gamma a b
-gamma |- Max a b = compileIntOp max gamma a b
-gamma |- Eq a b = do
-    a' ::: ta <- gamma |-- a
-    b' ::: tb <- gamma |-- b
-    Wit       <- typeEq ta tb
-    Wit       <- return $ witEq ta
-    let run e = a' e == b' e
-    return $ run ::: BoolType
-gamma |- If c t f = do
-    c' ::: BoolType <- gamma |-- c
-    t' ::: tt       <- gamma |-- t
-    f' ::: tf       <- gamma |-- f
-    Wit             <- typeEq tt tf
-    let run e = if c' e then t' e else f' e
-    return $ run ::: tt
-gamma |- Let v a b = do
-    a' ::: ta <- gamma            |-- a
-    b' ::: tb <- ext (v,ta) gamma |-- b
-    return $ (\e -> b' (a' e, e)) ::: tb
-gamma |- Arr l v b = do
-    l' ::: IntType <- gamma                 |-- l
-    b' ::: tb      <- ext (v,IntType) gamma |-- b
-    let run e = map (\i -> b' (i,e)) [0 .. l' e - 1]
-    return $ run ::: ListType tb
-gamma |- Ix a i = do
-    a' ::: ListType t <- gamma |-- a
-    i' ::: IntType    <- gamma |-- i
-    let run e = a' e `genericIndex` i' e
-    return $ run ::: t
-
-ext :: (Name, Type a) -> SymTab env -> SymTab (a,env)
-ext (v,t) gamma = Map.insert v (fst ::: t) (fmap shift gamma)
+instance Typeable Integer
   where
-    shift (get ::: u) = ((get . snd) ::: u)
+    toVal = I
+    fromVal (I i) = Just i
+    fromVal _     = Nothing
 
-compileIntOp
+instance Typeable a => Typeable [a]
+  where
+    toVal = L . map toVal
+    fromVal (L as) = mapM fromVal as
+
+evalBinOp
     :: (Integer -> Integer -> Integer)
-    -> SymTab env
-    -> Tree Feldspar
-    -> Tree Feldspar
-    -> Maybe (CompExp env)
-compileIntOp op gamma a b = do
-    a' ::: IntType <- gamma |-- a
-    b' ::: IntType <- gamma |-- b
-    let run e = a' e `op` b' e
-    return $ run ::: IntType
+    -> Maybe Value -> Maybe Value -> Maybe Value
+evalBinOp op a b = do
+    I a' <- a
+    I b' <- b
+    return $ I $ op a' b'
 
-eval :: forall a . Typeable a => Data a -> a
-eval (Data a) = (\(Just a) -> a) $ do
-    a' ::: ta <- emptyTab |-- a
-    Wit <- typeEq ta (typeRep :: Type a)
-    return $ a' ()
+eval' :: Env Value -> Tree Feldspar -> Maybe Value
+eval' env (In f) = case f of
+    Var v   -> Map.lookup v env
+    LitB b  -> Just $ B b
+    LitI i  -> Just $ I i
+    Add a b -> evalBinOp (+) (eval' env a) (eval' env b)
+    Sub a b -> evalBinOp (-) (eval' env a) (eval' env b)
+    Mul a b -> evalBinOp (*) (eval' env a) (eval' env b)
+    Min a b -> evalBinOp min (eval' env a) (eval' env b)
+    Max a b -> evalBinOp max (eval' env a) (eval' env b)
+    Eq  a b -> do
+        a' <- eval' env a
+        b' <- eval' env b
+        return $ B (a'==b')
+    If c t f -> do
+        B c' <- eval' env c
+        t'   <- eval' env t
+        f'   <- eval' env f
+        return $ if c' then t' else f'
+    Let v a b -> do
+        a' <- eval' env a
+        eval' (Map.insert v a' env) b
+    Arr l v f -> do
+        I l' <- eval' env l
+        fmap L $ sequence [eval' (Map.insert v (I i) env) f | i <- [0 .. l'-1]]
+    Ix arr i -> do
+        L as <- eval' env arr
+        I i' <- eval' env i
+        return $ genericIndex as i'
+
+eval :: Typeable a => Data a -> a
+eval (Data a) = case fromVal =<< eval' Map.empty a of
+    Just r -> r
 
 
 
@@ -391,14 +353,13 @@ alphaEqFeld = alphaEq (Nothing :: Maybe Name)
 type Size = [Range]
 
 -- | Check whether the integer is in the given size
-inSize :: forall a . Typeable a => a -> Size -> Bool
-inSize = go (typeRep :: Type a)
+inSize :: Typeable a => a -> Size -> Bool
+inSize = go . toVal
   where
-    go :: Type b -> b -> Size -> Bool
-    go BoolType _ _           = True
-    go IntType  i [r]         = i `inRange` r
-    go (ListType t) as (r:rs) =
-        inRange (genericLength as) r && all (\a -> go t a rs) as
+    go :: Value -> Size -> Bool
+    go (B _)  _      = True
+    go (I i)  [r]    = i `inRange` r
+    go (L as) (r:rs) = inRange (genericLength as) r && all (\a -> go a rs) as
 
 -- | Lookup the size of a given variable in the environment
 lookEnv :: Name -> Env Size -> Size
@@ -424,7 +385,7 @@ sizeInfS (Min a b) = zipWith rangeMin (sizeOf a) (sizeOf b)
 sizeInfS (Max a b) = zipWith rangeMax (sizeOf a) (sizeOf b)
 -- Reduce If when the condition is a constant:
 sizeInfS (If b t f)
-    | Just (Value BoolType b') <- valueOf b = sizeOf $ if b' then t else f
+    | Just (B b') <- valueOf b = sizeOf $ if b' then t else f
 sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
 sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
@@ -449,11 +410,6 @@ viewSingleton :: Size -> Maybe Integer
 viewSingleton [(Just l, Just u)] | l == u = Just l
 viewSingleton _ = Nothing
 
--- | Union type for constant values
-data Value
-  where
-    Value :: Type a -> a -> Value
-
 -- | Get the folded value of a sub-expression
 valueOf :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Value
 valueOf = below
@@ -461,37 +417,35 @@ valueOf = below
 -- | Get the folded value of a sub-expression, projected to 'Bool'
 valueOfB :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Bool
 valueOfB a = do
-    Value BoolType b <- below a
+    B b <- below a
     return b
 
 -- | Get the folded value of a sub-expression, projected to 'Integer'
 valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Integer
 valueOfI a = do
-    Value IntType i <- below a
+    I i <- below a
     return i
 
 -- | Compute the synthesized constant value of a node
 constFoldS :: (Size :< atts) => Syn Feldspar atts (Maybe Value)
 -- All integer cases are handled by getting the result from size inference:
-constFoldS f | Just i <- viewSingleton above = Just $ Value IntType i
-constFoldS (LitB b) = Just $ Value BoolType b
+constFoldS f | Just i <- viewSingleton above = Just $ I i
+constFoldS (LitB b) = Just $ B b
 -- Constant folding for Eq:
 constFoldS (Eq a b)
-    | Just (Value ta a') <- valueOf a
-    , Just (Value tb b') <- valueOf b
-    , Just Wit           <- typeEq ta tb
-    , Wit                <- witEq ta
-    = Just $ Value BoolType (a' == b')
+    | Just a' <- valueOf a
+    , Just b' <- valueOf b
+    = Just $ B (a' == b')
 -- Reduce Eq when sizes of operands are disjoint:
 constFoldS (Eq a b)
-    | Just True <- liftA2 (<=) ua lb = Just $ Value BoolType False
-    | Just True <- liftA2 (<=) ub la = Just $ Value BoolType False
+    | Just True <- liftA2 (<=) ua lb = Just $ B False
+    | Just True <- liftA2 (<=) ub la = Just $ B False
   where
     [(la,ua)] = sizeOf a
     [(lb,ub)] = sizeOf b
 -- Reduce If when the condition is a constant:
 constFoldS (If b t f)
-    | Just (Value BoolType b') <- valueOf b = valueOf $ if b' then t else f
+    | Just (B b') <- valueOf b = valueOf $ if b' then t else f
 constFoldS _ = Nothing
 
 -- | Size inference for a Feldspar expression tree
@@ -514,8 +468,8 @@ simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
     Rewrite Feldspar atts Feldspar
 -- Rewrite to a literal when constant folding says so:
 simplifier _
-    | Just (Value BoolType b) <- above = In $ LitB b
-    | Just (Value IntType i)  <- above = In $ LitI i
+    | Just (B b) <- above = In $ LitB b
+    | Just (I i)  <- above = In $ LitI i
 simplifier (Add a b)
     | Just 0 <- valueOfI a = Ret b
     | Just 0 <- valueOfI b = Ret a
@@ -542,7 +496,7 @@ simplifier (Max a b)
     [(lb,ub)] = sizeOf b
 -- Reduce If when the condition is a constant:
 simplifier (If c t f)
-    | Just (Value BoolType b) <- valueOf c = Ret $ if b then t else f
+    | Just (B b) <- valueOf c = Ret $ if b then t else f
 simplifier f = simpCxt f
 
 -- | Simplify a Feldspar expression tree
@@ -571,13 +525,13 @@ prop_sizeInf d = eval d `inSize` sizeInf (unData d)
 
 -- | 'sizeInfDag' is an over-approximation of 'eval'
 prop_sizeInfDag :: Typeable a => Data a -> Bool
-prop_sizeInfDag d = eval d `inSize` sizeInfDag (unsafePerformIO $ reifyDag $ unData d)
+prop_sizeInfDag d =
+    eval d `inSize` sizeInfDag (unsafePerformIO $ reifyDag $ unData d)
 
 -- | 'simplify' does not change semantics
 prop_simplifyEval :: forall a . Typeable a => Data a -> Bool
-prop_simplifyEval d
-    | Wit <- witEq (typeRep :: Type a)
-    = eval d == eval (Data $ simplify $ unData d)
+prop_simplifyEval d =
+    toVal (eval d) == toVal (eval (Data $ simplify $ unData d :: Data a))
 
 -- | 'simplify' and 'simplifyDag' give equivalent results
 prop_simplifyDag :: Data a -> Bool
