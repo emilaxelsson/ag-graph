@@ -166,8 +166,13 @@ conf name = defaultConfig
 --------------------------------------------------------------------------------
 
 
-repminSimple :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
-repminSimple = snd . Simple.runRewriteDag const minS minI rep' init
+repminSimple :: Simple.Dag IntTreeF -> Simple.Tree IntTreeF
+repminSimple =  snd . Simple.runAGDag const (minS |*| rep) minI init
+  where init (MinS i,_) = MinI i
+
+
+repminSimple' :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminSimple' = snd . Simple.runRewriteDag const minS minI rep' init
   where init (MinS i) = MinI i
 
 
@@ -175,27 +180,43 @@ repminSimple = snd . Simple.runRewriteDag const minS minI rep' init
 -- important difference is that `repmin` produces a tree as result, which means
 -- that simply forcing a bit result takes some time.
 
+
+repmin_expTreeAG n = bgroup "expTreeAG"
+    [bench' (show n) repmin $ expTree n | n <- [startN..n]]
+
 repmin_expTree n = bgroup "expTree"
     [bench' (show n) repmin' $ expTree n | n <- [startN..n]]
-  -- Grows exponentially
 
+repmin_expDagAG n = bgroup "expDagAG"
+    [bench' (show n) repminG $ expDag n | n <- [startN..n]]
 
 repmin_expDag n = bgroup "expDag"
     [bench' (show n) repminG' $ expDag n | n <- [startN..n]]
 
-repmin_expSimple n = bgroup "expSimple"
+
+repmin_expSimpleAG n = bgroup "expSimpleAG"
     [bench' (show n) repminSimple $ expSimple n | n <- [startN..n]]
 
-repmin_linearSimple n = bgroup "linearSimple"
+repmin_expSimple n = bgroup "expSimple"
+    [bench' (show n) repminSimple' $ expSimple n | n <- [startN..n]]
+
+
+repmin_linearSimpleAG n = bgroup "linearSimpleAG"
     [bench' (show n) repminSimple $ linearSimple n | n <- [startN..n]]
 
+repmin_linearSimple n = bgroup "linearSimple"
+    [bench' (show n) repminSimple' $ linearSimple n | n <- [startN..n]]
+
+
+repmin_linearDagAG n = bgroup "linearDagAG"
+    [bench' (show n) repminG $ linearDag n | n <- [startN..n]]
 
 repmin_linearDag n = bgroup "linearDag"
     [bench' (show n) repminG' $ linearDag n | n <- [startN..n]]
 
 
 repmin_linearSimpleBig n = bgroup "linearSimpleBig"
-    [bench' (show n) repminSimple $ linearSimple n | n <- [100,200..n]]
+    [bench' (show n) repminSimple' $ linearSimple n | n <- [100,200..n]]
 
 
 repmin_linearDagBig n = bgroup "linearDagBig"
@@ -205,24 +226,29 @@ startN = 4
 
 
 main = do
-    defaultMainWith (conf "reduce_expTree")          [reduce_expTree         16]
-    defaultMainWith (conf "reduce_expDag")           [reduce_expDag          16]
-    defaultMainWith (conf "reduce_expSimple")        [reduce_expSimple       16]
+    defaultMainWith (conf "reduce_exp")          [reduce_expTree         16
+                                                 ,reduce_expDag          16
+                                                 ,reduce_expSimple       16]
 
-    defaultMainWith (conf "reduce_linearDag")        [reduce_linearDag       16]
-    defaultMainWith (conf "reduce_linearSimple")     [reduce_linearSimple    16]
+    defaultMainWith (conf "reduce_linear")        [reduce_linearDag       16
+                                                  ,reduce_linearSimple    16]
 
-    defaultMainWith (conf "reduce_big_linearDag")    [reduce_linearDagBig    1000]
-    defaultMainWith (conf "reduce_big_linearSimple") [reduce_linearSimpleBig 1000]
-
-
-    defaultMainWith (conf "repmin_expTree")          [repmin_expTree         16]
-    defaultMainWith (conf "repmin_expDag")           [repmin_expDag          16]
-    defaultMainWith (conf "repmin_expSimple")        [repmin_expSimple       16]
-
-    defaultMainWith (conf "repmin_linearDag")        [repmin_linearDag       16]
-    defaultMainWith (conf "repmin_linearSimple")     [repmin_linearSimple    16]
+    defaultMainWith (conf "reduce_big_linear")    [reduce_linearDagBig    1000
+                                                  ,reduce_linearSimpleBig 1000]
 
 
-    defaultMainWith (conf "repmin_big_linearSimple") [repmin_linearSimpleBig 1000]
-    defaultMainWith (conf "repmin_big_linearDag")    [repmin_linearDagBig    1000]
+    defaultMainWith (conf "repmin_exp")          [repmin_expTreeAG       16
+                                                 ,repmin_expTree         16
+                                                 ,repmin_expDagAG        16
+                                                 ,repmin_expDag          16
+                                                 ,repmin_expSimpleAG     16
+                                                 ,repmin_expSimple       16]
+
+    defaultMainWith (conf "repmin_linear")        [repmin_linearDagAG     16
+                                                  ,repmin_linearDag       16
+                                                  ,repmin_linearSimpleAG  16
+                                                  ,repmin_linearSimple    16]
+
+
+    defaultMainWith (conf "repmin_big_linear") [repmin_linearSimpleBig 1000
+                                               ,repmin_linearDagBig    1000]
