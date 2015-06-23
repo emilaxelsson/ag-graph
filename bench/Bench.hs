@@ -12,6 +12,7 @@ import Criterion.Main
 
 import Criterion.Types
 import Control.DeepSeq
+import Data.Set (Set)
 
 import AG
 import Dag
@@ -222,6 +223,45 @@ repmin_linearSimpleBig n = bgroup "linearSimpleBig"
 repmin_linearDagBig n = bgroup "linearDagBig"
     [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
 
+
+
+-- leavesBelow
+
+leavesBelowSimple :: Int -> Simple.Dag IntTreeF -> Set Int
+leavesBelowSimple d = Simple.runAGDag min leavesBelowS leavesBelowI (const d)
+
+
+leavesBelow_expTree n = bgroup "expTree"
+    [bench' (show n) (leavesBelow' 20) $ expTree n | n <- [startN..n]]
+
+
+leavesBelow_expSimple n = bgroup "expSimple"
+    [bench' (show n) (leavesBelowSimple 20) $ expSimple n | n <- [startN..n]]
+
+leavesBelow_expDag n = bgroup "expDag"
+    [bench' (show n) (leavesBelowG 20) $ expDag n | n <- [startN..n]]
+
+
+leavesBelow_linearSimple n = bgroup "linearSimple"
+    [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [startN..n]]
+
+
+leavesBelow_linearDag n = bgroup "linearDag"
+    [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [startN..n]]
+
+
+leavesBelow_linearSimpleBig n = bgroup "linearSimpleBig"
+    [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [100,200..n]]
+
+
+leavesBelow_linearDagBig n = bgroup "linearDagBig"
+    [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [100,200..n]]
+
+
+
+
+
+
 startN = 4
 
 
@@ -252,3 +292,11 @@ main = do
 
     defaultMainWith (conf "repmin_big_linear") [repmin_linearSimpleBig 1000
                                                ,repmin_linearDagBig    1000]
+
+
+    defaultMainWith (conf "leavesBelow_exp")          [leavesBelow_expTree         16
+                                                      ,leavesBelow_expDag          16
+                                                      ,leavesBelow_expSimple       16]
+
+    defaultMainWith (conf "leavesBelow_linear")        [leavesBelow_linearDag       16
+                                                       ,leavesBelow_linearSimple    16]
