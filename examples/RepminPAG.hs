@@ -15,6 +15,7 @@
 
 module RepminPAG where
 
+import Paper (IntTreeF(..))
 import PAG
 import Dag.PAG
 
@@ -23,9 +24,6 @@ import System.IO.Unsafe
 
 newtype MinS a = MinS {unMinS :: Int} deriving (Functor, Foldable, Traversable)
 newtype MinI a = MinI a deriving (Functor, Foldable, Traversable)
-
-data IntTreeF a = Leaf Int | Node a a
-  deriving (Eq, Show,Functor, Foldable, Traversable)
 
 data I a = I {unI :: a} deriving (Functor, Foldable, Traversable)
 

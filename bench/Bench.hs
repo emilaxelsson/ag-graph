@@ -23,6 +23,10 @@ import AG
 import Dag
 import Dag.Internal
 import Dag.AG
+import qualified PAG
+import qualified Dag.PAG as PAG
+import qualified RepminPAG as PAG
+
 import qualified DagSimple as Simple
 import qualified DagSimple.Internal as Simple
 import qualified DagSimple.AG as Simple
@@ -163,31 +167,31 @@ reduceG = fromEnum . runAGDag max value depth (const 0)
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
-reduce_expTree n = bgroup "expTree"
+reduce_expTree n = bgroup "Tree"
     [bench' (show n) reduce $ expTree n | n <- [startN..n]]
   -- Grows exponentially
 
-reduce_expSimple n = bgroup "expSimple"
+reduce_expSimple n = bgroup "Simple"
     [bench' (show n) reduceS $ expSimple n | n <- [startN..n]]
 
-reduce_expDag n = bgroup "expDag"
+reduce_expDag n = bgroup "Dag"
     [bench' (show n) reduceG $ expDag n | n <- [startN..n]]
 
 
-reduce_linearSimple n = bgroup "linearSimple"
+reduce_linearSimple n = bgroup "Simple"
     [bench' (show n) reduceS $ linearSimple n | n <- [startN..n]]
   -- Grows linearly
 
-reduce_linearDag n = bgroup "linearDag"
+reduce_linearDag n = bgroup "Dag"
     [bench' (show n) reduceG $ linearDag n | n <- [startN..n]]
   -- Grows linearly
 
-reduce_linearSimpleBig n = bgroup "linearSimpleBig"
+reduce_linearSimpleBig n = bgroup "Simple"
     [bench' (show n) reduceS $ linearSimple n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
-reduce_linearDagBig n = bgroup "linearDagBig"
+reduce_linearDagBig n = bgroup "Dag"
     [bench' (show n) reduceG $ linearDag n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
@@ -220,45 +224,55 @@ repminSimple' = snd . Simple.runRewriteDag const minS minI rep' init
 -- that simply forcing a bit result takes some time.
 
 
-repmin_expTreeAG n = bgroup "expTreeAG"
+repmin_expTreeAG n = bgroup "TreeAG"
     [bench' (show n) repmin $ expTree n | n <- [startN..n]]
 
-repmin_expTree n = bgroup "expTree"
+repmin_expTreePAG n = bgroup "TreePAG"
+    [bench' (show n) PAG.repmin $ expTree n | n <- [startN..n]]
+
+repmin_expTree n = bgroup "Tree"
     [bench' (show n) repmin' $ expTree n | n <- [startN..n]]
 
-repmin_expDagAG n = bgroup "expDagAG"
+repmin_expDagAG n = bgroup "DagAG"
     [bench' (show n) repminG $ expDag n | n <- [startN..n]]
 
-repmin_expDag n = bgroup "expDag"
+repmin_expDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ expDag n | n <- [startN..n]]
+
+repmin_expDag n = bgroup "Dag"
     [bench' (show n) repminG' $ expDag n | n <- [startN..n]]
 
 
-repmin_expSimpleAG n = bgroup "expSimpleAG"
+repmin_expSimpleAG n = bgroup "SimpleAG"
     [bench' (show n) repminSimple $ expSimple n | n <- [startN..n]]
 
-repmin_expSimple n = bgroup "expSimple"
+repmin_expSimple n = bgroup "Simple"
     [bench' (show n) repminSimple' $ expSimple n | n <- [startN..n]]
 
 
-repmin_linearSimpleAG n = bgroup "linearSimpleAG"
+repmin_linearSimpleAG n = bgroup "SimpleAG"
     [bench' (show n) repminSimple $ linearSimple n | n <- [startN..n]]
 
-repmin_linearSimple n = bgroup "linearSimple"
+repmin_linearSimple n = bgroup "Simple"
     [bench' (show n) repminSimple' $ linearSimple n | n <- [startN..n]]
 
 
-repmin_linearDagAG n = bgroup "linearDagAG"
+repmin_linearDagAG n = bgroup "DagAG"
     [bench' (show n) repminG $ linearDag n | n <- [startN..n]]
 
-repmin_linearDag n = bgroup "linearDag"
+repmin_linearDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ linearDag n | n <- [startN..n]]
+
+
+repmin_linearDag n = bgroup "Dag"
     [bench' (show n) repminG' $ linearDag n | n <- [startN..n]]
 
 
-repmin_linearSimpleBig n = bgroup "linearSimpleBig"
+repmin_linearSimpleBig n = bgroup "Simple"
     [bench' (show n) repminSimple' $ linearSimple n | n <- [100,200..n]]
 
 
-repmin_linearDagBig n = bgroup "linearDagBig"
+repmin_linearDagBig n = bgroup "Dag"
     [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
 
 
@@ -270,30 +284,30 @@ leavesBelowSimple :: Int -> Simple.Dag IntTreeF -> Set Int
 leavesBelowSimple d = Simple.runAGDag min leavesBelowS leavesBelowI (const d)
 
 
-leavesBelow_expTree n = bgroup "expTree"
+leavesBelow_expTree n = bgroup "Tree"
     [bench' (show n) (leavesBelow' 20) $ expTree n | n <- [startN..n]]
 
 
-leavesBelow_expSimple n = bgroup "expSimple"
+leavesBelow_expSimple n = bgroup "Simple"
     [bench' (show n) (leavesBelowSimple 20) $ expSimple n | n <- [startN..n]]
 
-leavesBelow_expDag n = bgroup "expDag"
+leavesBelow_expDag n = bgroup "Dag"
     [bench' (show n) (leavesBelowG 20) $ expDag n | n <- [startN..n]]
 
 
-leavesBelow_linearSimple n = bgroup "linearSimple"
+leavesBelow_linearSimple n = bgroup "Simple"
     [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [startN..n]]
 
 
-leavesBelow_linearDag n = bgroup "linearDag"
+leavesBelow_linearDag n = bgroup "Dag"
     [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [startN..n]]
 
 
-leavesBelow_linearSimpleBig n = bgroup "linearSimpleBig"
+leavesBelow_linearSimpleBig n = bgroup "Simple"
     [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [100,200..n]]
 
 
-leavesBelow_linearDagBig n = bgroup "linearDagBig"
+leavesBelow_linearDagBig n = bgroup "Dag"
     [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [100,200..n]]
 
 -----------------------
@@ -332,7 +346,7 @@ exDag = map renameFeld $ unsafePerformIO $ mapM reifyDag exTree
 exSimple :: [Simple.Dag Feldspar]
 exSimple = map Simple.toSimple exDag
 
-simplify_Tree = bgroup "tree"
+simplify_Tree = bgroup "Tree"
     [bench' (show n) simplify $ exTree !! n | n <- [0..length exTree -1]]
 
 simplify_Dag = bgroup "Dag"
@@ -360,7 +374,7 @@ exlDag = map rename' . unsafePerformIO $ mapM reifyDag exlTree
 exlSimple :: [Simple.Dag ExpF]
 exlSimple = map Simple.toSimple exlDag
 
-typeInf_Tree = bgroup "tree"
+typeInf_Tree = bgroup "Tree"
     [bench' (show n) (typeInf Map.empty) $ exlTree !! n | n <- [0..length exlTree -1]]
 
 typeInf_Dag = bgroup "Dag"
@@ -387,13 +401,16 @@ main = do
 
 
     defaultMainWith (conf "repmin_exp")          [repmin_expTreeAG       16
+                                                 ,repmin_expTreePAG      16
                                                  ,repmin_expTree         16
                                                  ,repmin_expDagAG        16
+                                                 ,repmin_expDagPAG       16
                                                  ,repmin_expDag          16
                                                  ,repmin_expSimpleAG     16
                                                  ,repmin_expSimple       16]
 
     defaultMainWith (conf "repmin_linear")        [repmin_linearDagAG     16
+                                                  ,repmin_linearDagPAG    16
                                                   ,repmin_linearDag       16
                                                   ,repmin_linearSimpleAG  16
                                                   ,repmin_linearSimple    16]
@@ -409,6 +426,11 @@ main = do
 
     defaultMainWith (conf "leavesBelow_linear")        [leavesBelow_linearDag       16
                                                        ,leavesBelow_linearSimple    16]
+
+    defaultMainWith (conf "leavesBelow_big_linear")    [leavesBelow_linearDagBig    1000
+                                                        ,leavesBelow_linearSimpleBig 1000]
+
+
 
     defaultMainWith (conf "simplify")          [simplify_Tree
                                                ,simplify_Dag
