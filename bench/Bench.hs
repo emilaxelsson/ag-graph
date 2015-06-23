@@ -84,6 +84,22 @@ instance NFDataF Feldspar where
   rnfF (Arr x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
   rnfF (Ix x y) = rnf x `seq` rnf y `seq` ()
 
+instance NFData Type where
+  rnf BoolType = ()
+  rnf IntType = ()
+
+instance NFDataF ExpF where
+  rnfF (Var' n) = rnf n `seq` ()
+  rnfF (LitB' b) = rnf b `seq` ()
+  rnfF (LitI' i) = rnf i `seq` ()
+  rnfF (Add' x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Eq' x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (If' x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Iter' w x y z) = rnf w `seq` rnf x `seq` rnf y `seq` rnf z `seq` ()
+
+
+
+
 expTree :: Int -> Tree IntTreeF
 expTree 1 = In $ Leaf 10
 expTree n = In $ Node (expTree (n-1)) (expTree (n-1))
@@ -246,8 +262,9 @@ repmin_linearDagBig n = bgroup "linearDagBig"
     [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
 
 
-
--- leavesBelow
+-----------------
+-- leavesBelow --
+-----------------
 
 leavesBelowSimple :: Int -> Simple.Dag IntTreeF -> Set Int
 leavesBelowSimple d = Simple.runAGDag min leavesBelowS leavesBelowI (const d)
@@ -279,9 +296,9 @@ leavesBelow_linearSimpleBig n = bgroup "linearSimpleBig"
 leavesBelow_linearDagBig n = bgroup "linearDagBig"
     [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [100,200..n]]
 
-
--- Feldspar simplify
-
+-----------------------
+-- Feldspar simplify --
+-----------------------
 
 simplifySimple :: Simple.Dag Feldspar -> Simple.Dag Feldspar
 simplifySimple
@@ -313,7 +330,6 @@ exDag :: [Dag Feldspar]
 exDag = map renameFeld $ unsafePerformIO $ mapM reifyDag exTree
 
 exSimple :: [Simple.Dag Feldspar]
-{-# NOINLINE exSimple #-}
 exSimple = map Simple.toSimple exDag
 
 simplify_Tree = bgroup "tree"
@@ -324,6 +340,34 @@ simplify_Dag = bgroup "Dag"
 
 simplify_Simple = bgroup "Simple"
     [bench' (show n) simplifySimple $ exSimple !! n | n <- [0..length exSimple - 1]]
+
+
+--------------------
+-- type inference --
+--------------------
+
+typeInfSimple :: Env -> Simple.Dag ExpF -> Maybe Type
+typeInfSimple env = Simple.runAGDag trueIntersection typeInfS typeInfI (const env)
+
+
+exlTree :: [Tree ExpF]
+exlTree = [gt1,gt2,gt3]
+
+exlDag :: [Dag ExpF]
+{-# NOINLINE exlDag #-}
+exlDag = map rename' . unsafePerformIO $ mapM reifyDag exlTree
+
+exlSimple :: [Simple.Dag ExpF]
+exlSimple = map Simple.toSimple exlDag
+
+typeInf_Tree = bgroup "tree"
+    [bench' (show n) (typeInf Map.empty) $ exlTree !! n | n <- [0..length exlTree -1]]
+
+typeInf_Dag = bgroup "Dag"
+    [bench' (show n) (typeInfG Map.empty) $ exlDag !! n | n <- [0..length exlDag - 1 ]]
+
+typeInf_Simple = bgroup "Simple"
+    [bench' (show n) (typeInfSimple Map.empty) $ exlSimple !! n | n <- [0..length exlSimple - 1]]
 
 
 
@@ -369,3 +413,7 @@ main = do
     defaultMainWith (conf "simplify")          [simplify_Tree
                                                ,simplify_Dag
                                                ,simplify_Simple]
+
+    defaultMainWith (conf "typeInf")          [typeInf_Tree
+                                              ,typeInf_Dag
+                                              ,typeInf_Simple]
