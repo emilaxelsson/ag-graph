@@ -108,127 +108,141 @@ runAGDag res syn inh iinit Dag {edges,root,nodeCount} = sFin where
             s <- run (fromJust $ imapFin ! n) t
             MVec.unsafeWrite smap n s
       -- first apply to the root
-      s <- runF iFin root
+      MVec.unsafeWrite imap root (Just iFin)
       -- then apply to the edges
       mapM_ iter (IntMap.toList edges)
       -- finalise the mappings for attribute values
       imapFin <- Vec.unsafeFreeze imap
       smapFin <- Vec.unsafeFreeze smap
-      return s
-
+      return (smapFin ! root)
 
 
 -- | This function runs an attribute grammar with rewrite function on
 -- a dag. The result is the (combined) synthesised attribute at the
 -- root of the dag and the rewritten dag.
 
-runRewriteDag :: forall f g u d . (Traversable f, Functor g, Traversable g)
-    => (d -> d -> d)       -- ^ Resolution of downwards state
-    -> Syn'    f (u, d) u  -- ^ Bottom-up state propagation
-    -> Inh'    f (u, d) d  -- ^ Top-down state propagation
-    -> Rewrite f (u, d) g  -- ^ Homomorphic rewrite
-    -> (u -> d)            -- ^ Initial top-down state
-    -> Dag f             -- ^ Original term
-    -> (u, Dag g)        -- ^ Final state and rewritten term
-runRewriteDag res up down rew dinit g = (uFin,appCxtDag gg) where
-    dFin    = dinit uFin
-    uFin    = fst $ env $ root g
-    (gg,ws) = runWriter $ mapDagM rewNode g
-    ws'     = (root g, Right dFin) : ws
-    env n   = fromListEither errUp res ws' IntMap.! n
-    errUp   = error "runRewriteDag1: over-constrained bottom-up state"
-
-    rewNode :: Node -> f Node -> Writer [(Node, Either u d)] (Free g Node)
-    rewNode n f = do
-        let f' = number f
-        tell [(n, Left (up f'))]
-        let dm = down f'
-        Traversable.forM f' $ \(Numbered n _) -> tell [(n, Right (lookupNumMap (snd ?above) n dm))]
-        return $ fmap unNumbered (rew f')
-      where
-        ?above = env n
-        ?below = env . unNumbered
-
-
--- | Joining a dag of contexts. The node identifiers in the resulting dag are unrelated to those
--- in the original dag.
-appCxtDag :: Traversable f => Dag (Free f) -> Dag f
-appCxtDag g = removeIndirections $ Dag r (IntMap.fromList es') nx'
-  where
-    Dag r es nx = reindexDag g
-    (es',nx')     = flip runState nx
-                  $ execWriterT
-                  $ Traversable.mapM (uncurry listCxtTop)
-                  $ IntMap.assocs
-                  $ es
-
-
-mapDagM :: Monad m => (Node -> f Node -> m (g Node)) -> Dag f -> m (Dag g)
-mapDagM f g = do
-    es <- Traversable.sequence $ IntMap.mapWithKey f $ edges g
-    return g {edges = es}
-
-fromListEither :: (a -> a -> a) -> (b -> b -> b) -> [(Int, Either a b)] -> IntMap (a,b)
-fromListEither fa fb as = IntMap.fromList [(i,(am IntMap.! i, bm IntMap.! i)) | i <- is]
-  where
-    is = IntMap.keys $ IntMap.fromList as
-    am = IntMap.fromListWith fa [(i,a) | (i, Left a)  <- as]
-    bm = IntMap.fromListWith fb [(i,b) | (i, Right b) <- as]
-
-
-removeIndirections :: Functor f => Dag (Indirect f) -> Dag f
-removeIndirections (Dag r es nx) = Dag (chase es r) es' nx
-  where
-    es' = IntMap.mapMaybe direct $ fmap (fmap (chase es)) es
-
-
--- | Make an equivalent dag using consecutive indexes form 0 and up
-reindexDag :: Functor f => Dag f -> Dag f
-reindexDag (Dag r es _) = Dag (reix r) es' nx'
-  where
-    (ns,fs) = unzip $ IntMap.toList es
-    reix    = (IntMap.!) (IntMap.fromList (zip ns [0..]))
-    es'     = IntMap.fromAscList $ zip [0..] $ map (fmap reix) fs
-    nx'     = length ns
-
--- | Turn a 'Free' into an association list where the provided node @n@ maps to the root of the
--- context
-listCxtTop :: Traversable f =>
-    Node -> Free f Node -> WriterT [(Node, Indirect f Node)] (State Node) ()
-listCxtTop n (Ret n') = tell [(n, Indirect n')]
-listCxtTop n (In f)  = do
-    (f',es) <- lift $ runWriterT $ Traversable.mapM listCxt f
-    tell [(n, Direct f')]
-    tell $ map (\(n,f) -> (n, Direct f)) es
+runRewriteDag :: forall f g d u .(Traversable f, Traversable g)
+    => (d -> d -> d)       -- ^ resolution function for inherited attributes
+    -> Syn' f (u,d) u      -- ^ semantic function of synthesised attributes
+    -> Inh' f (u,d) d      -- ^ semantic function of inherited attributes
+    -> Rewrite f (u, d) g  -- ^ initialisation of inherited attributes
+    -> (u -> d)            -- ^ input term
+    -> Dag f
+    -> (u, Dag g)
+runRewriteDag res syn inh rewr dinit Dag {edges,root,nodeCount} = result where
+    result@(uFin,_) = runST runM
+    dFin = dinit uFin
+    runM :: forall s . ST s (u, Dag g)
+    runM = mdo
+      -- construct empty mapping from nodes to inherited attribute values
+      dmap <- MVec.new nodeCount
+      MVec.set dmap Nothing
+      -- allocate mapping from nodes to synthesised attribute values
+      umap <- MVec.new nodeCount
+      -- allocate counter for numbering child nodes
+      count <- newSTRef 0
+      -- allocate vector to represent edges of the target DAG
+      allEdges <- MVec.new nodeCount
+      let -- This function is applied to each edge
+          iter (node,s) = do
+             let d = fromJust $ dmapFin Vec.! node
+             writeSTRef count 0
+             (u,t) <- run d s
+             MVec.unsafeWrite umap node u
+             MVec.unsafeWrite allEdges node t
+          -- Runs the AG on an edge with the given input inherited
+          -- attribute value and produces the output synthesised
+          -- attribute value along with the rewritten subtree.
+          run :: d -> f Node -> ST s (u, Free g Node)
+          run d t = mdo
+             -- apply the semantic functions
+             let u = explicit syn (u,d) (fst . unNumbered) result
+                 m = explicit inh (u,d) (fst . unNumbered) result
+                 -- recurses into the child nodes and numbers them
+                 run' :: Node -> ST s (Numbered ((u,d), Node))
+                 run' s = do i <- readSTRef count
+                             writeSTRef count $! (i+1)
+                             let d' = lookupNumMap d i m
+                             (u',t) <- runF d' s
+                             return (Numbered i ((u',d'), t))
+             result <- Traversable.mapM run' t
+             let t' = fmap (snd . unNumbered) $ explicit rewr (u,d) (fst . unNumbered) result
+             return (u, t')
+          runF :: d -> Node -> ST s (u, Node)
+          runF d x = do
+             -- We found a node: update the mapping for inherited
+             -- attribute values
+             old <- MVec.unsafeRead dmap x
+             let new = case old of
+                         Just o -> res o d
+                         _      -> d
+             MVec.unsafeWrite dmap x (Just new)
+             return (umapFin Vec.! x, x)
+      MVec.unsafeWrite dmap root (Just dFin)
+      -- then apply to the edges
+      mapM_ iter $ IntMap.toList edges
+      -- finalise the mappings for attribute values and target DAG
+      dmapFin <- Vec.unsafeFreeze dmap
+      umapFin <- Vec.unsafeFreeze umap
+      allEdgesFin <- Vec.unsafeFreeze allEdges
+      return (umapFin ! root, relabelNodes root allEdgesFin nodeCount)
 
 
-
-data Indirect f a
-    = Indirect Node
-    | Direct (f a)
-  deriving (Eq, Show, Functor)
-
-direct :: Indirect f a -> Maybe (f a)
-direct (Direct f) = Just f
-direct _          = Nothing
-
-chase :: IntMap (Indirect f a) -> Node -> Node
-chase es n = case es IntMap.! n of
-    Indirect n' -> chase es n'
-    _ -> n
-
--- | Turn a 'Free' into an association list each node has a freshly generated identifier
-listCxt :: Traversable f => Free f Node -> WriterT [(Node, f Node)] (State Node) Node
-listCxt (Ret n) = return n
-listCxt (In f) = do
-    n  <- freshNode
-    f' <- Traversable.mapM listCxt f
-    tell [(n,f')]
-    return n
-
-
-freshNode :: MonadState Node m => m Node
-freshNode = do
-    n <- get
-    put (succ n)
-    return n
+-- | This function relabels the nodes of the given dag. Parts that are
+-- unreachable from the root are discarded. Instead of an 'IntMap',
+-- edges are represented by a 'Vector'.
+relabelNodes :: forall f . Traversable f 
+             => Node
+             -> Vector (Free f Int) 
+             -> Int 
+             -> Dag f
+relabelNodes root edges nodeCount = runST run where
+    run :: ST s (Dag f)
+    run = do
+      -- allocate counter for generating nodes
+      curNode <- newSTRef 0
+      newEdges <- newSTRef IntMap.empty  -- the new graph
+      -- construct empty mapping for mapping old nodes to new nodes
+      newNodes :: MVector s (Maybe Int) <- MVec.new nodeCount
+      MVec.set newNodes Nothing
+      let -- Replaces node in the old graph with a node in the new
+          -- graph. This function is applied to all nodes reachable
+          -- from the given node as well.
+          build :: Node -> ST s Node
+          build node = do
+            -- check whether we have already constructed a new node
+            -- for the given node
+             mnewNode <- MVec.unsafeRead newNodes node
+             case mnewNode of
+               Just newNode -> return newNode
+               Nothing -> 
+                   case edges Vec.! node of
+                     Ret n -> do
+                       -- We found an edge that just maps to another
+                       -- node. We shortcut this edge.
+                       newNode <- build n
+                       MVec.unsafeWrite newNodes node (Just newNode)
+                       return newNode
+                     In f -> do
+                        -- Create a new node and call build recursively
+                       newNode <- readSTRef curNode
+                       writeSTRef curNode $! (newNode+1)
+                       MVec.unsafeWrite newNodes node (Just newNode)
+                       f' <- Traversable.mapM fresh f
+                       modifySTRef newEdges (IntMap.insert newNode f')
+                       return newNode
+          -- allocate fresh nodes for nested tree structure
+          fresh :: Free f Node -> ST s Node
+          fresh (Ret n) = build n
+          fresh (In f) = do
+            newNode <- readSTRef curNode
+            writeSTRef curNode $! (newNode+1)
+            f' <- Traversable.mapM fresh f
+            modifySTRef newEdges (IntMap.insert newNode f')
+            return newNode
+      -- start relabelling from the root
+      root' <- build root
+      -- collect the final edges mapping and node count
+      edges' <- readSTRef newEdges
+      nodeCount' <- readSTRef curNode
+      return Dag {edges = edges', root = root', nodeCount = nodeCount'}
