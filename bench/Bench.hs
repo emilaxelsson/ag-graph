@@ -13,6 +13,11 @@ import Criterion.Main
 import Criterion.Types
 import Control.DeepSeq
 import Data.Set (Set)
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+
+import System.IO.Unsafe (unsafePerformIO)
 
 import AG
 import Dag
@@ -21,7 +26,9 @@ import Dag.AG
 import qualified DagSimple as Simple
 import qualified DagSimple.Internal as Simple
 import qualified DagSimple.AG as Simple
-import Paper
+import Paper hiding (Exp(..))
+import qualified Feldspar
+import Feldspar (Feldspar (..),sizeInfS,sizeInfI,sizeInf,constFoldS,simplifier,simplify,renameFeld)
 
 
 
@@ -61,6 +68,21 @@ instance NFDataF IntTreeF
   where
     rnfF (Leaf l)   = rnf l `seq` ()
     rnfF (Node a b) = rnf a `seq` rnf b `seq` ()
+
+instance NFDataF Feldspar where
+  rnfF (Var n) = rnf n `seq` ()
+  rnfF (LitB b) = rnf b `seq` ()
+  rnfF (LitI i) = rnf i `seq` ()
+  rnfF (Add x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Sub x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Mul x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Eq x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Min x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Max x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (If x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Let x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Arr x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Ix x y) = rnf x `seq` rnf y `seq` ()
 
 expTree :: Int -> Tree IntTreeF
 expTree 1 = In $ Leaf 10
@@ -258,7 +280,50 @@ leavesBelow_linearDagBig n = bgroup "linearDagBig"
     [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [100,200..n]]
 
 
+-- Feldspar simplify
 
+
+simplifySimple :: Simple.Dag Feldspar -> Simple.Dag Feldspar
+simplifySimple
+    = snd
+    . Simple.runRewriteDag
+        trueIntersection
+        (sizeInfS |*| constFoldS)
+        sizeInfI
+        simplifier
+        (const Map.empty)
+
+simplifyDag :: Dag Feldspar -> Dag Feldspar
+simplifyDag
+    = snd
+    . runRewriteDag
+        trueIntersection
+        (sizeInfS |*| constFoldS)
+        sizeInfI
+        simplifier
+        (const Map.empty)
+
+
+
+exTree :: [Tree Feldspar]
+exTree = map Feldspar.unData [Feldspar.ex1, Feldspar.ex2, Feldspar.ex3]
+
+exDag :: [Dag Feldspar]
+{-# NOINLINE exDag #-}
+exDag = map renameFeld $ unsafePerformIO $ mapM reifyDag exTree
+
+exSimple :: [Simple.Dag Feldspar]
+{-# NOINLINE exSimple #-}
+exSimple = map Simple.toSimple exDag
+
+simplify_Tree = bgroup "tree"
+    [bench' (show n) simplify $ exTree !! n | n <- [0..length exTree -1]]
+
+simplify_Dag = bgroup "Dag"
+    [bench' (show n) simplifyDag $ exDag !! n | n <- [0..length exDag - 1 ]]
+
+simplify_Simple = bgroup "Simple"
+    [bench' (show n) simplifySimple $ exSimple !! n | n <- [0..length exSimple - 1]]
 
 
 
@@ -300,3 +365,7 @@ main = do
 
     defaultMainWith (conf "leavesBelow_linear")        [leavesBelow_linearDag       16
                                                        ,leavesBelow_linearSimple    16]
+
+    defaultMainWith (conf "simplify")          [simplify_Tree
+                                               ,simplify_Dag
+                                               ,simplify_Simple]

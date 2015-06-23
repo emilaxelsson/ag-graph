@@ -27,6 +27,7 @@ module DagSimple
     , termTree
     , reifyDag
     , unravelDag
+    , toSimple
     ) where
 
 import Control.Applicative
@@ -34,6 +35,7 @@ import Control.Exception.Base
 import Control.Monad.State
 import DagSimple.Internal
 import Tree
+import qualified Dag
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable (toList)
 import qualified Data.HashMap.Lazy as HashMap
@@ -143,6 +145,11 @@ unravelDag :: forall f. Functor f => Dag f -> Tree f
 unravelDag g = build (root g)
     where build :: Node -> Tree f
           build n = In $ fmap build $ lookupNode n (edges g)
+
+
+toSimple :: Traversable f => Dag.Dag f -> Dag f
+toSimple dag = Dag count (IntMap.insert count root edges) (count + 1)
+  where (root, edges, count) = Dag.flatten dag
 
 -- | Checks whether two dags are bisimilar. In particular, we have
 -- the following equality
