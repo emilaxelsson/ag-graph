@@ -469,7 +469,7 @@ simplifier :: (Size :< atts, Maybe Value :< atts, Env Size :< atts) =>
 -- Rewrite to a literal when constant folding says so:
 simplifier _
     | Just (B b) <- above = In $ LitB b
-    | Just (I i)  <- above = In $ LitI i
+    | Just (I i) <- above = In $ LitI i
 simplifier (Add a b)
     | Just 0 <- valueOfI a = Ret b
     | Just 0 <- valueOfI b = Ret a
