@@ -324,9 +324,9 @@ repmin' :: Tree IntTreeF -> Tree IntTreeF
 repmin' = snd . runRewrite minS minI rep' init
   where init (MinS i) = MinI i
 
--- repminG' :: Dag IntTreeF -> Dag IntTreeF
--- repminG' = snd . runRewriteDagST const minS minI rep' init
---   where init (MinS i) = MinI i
+repminG' :: Dag IntTreeF -> Dag IntTreeF
+repminG' = snd . runRewriteDag const minS minI rep' init
+  where init (MinS i) = MinI i
 
 repminTestG1  = repminG i1
 -- repminTestG1' = repminG' i1

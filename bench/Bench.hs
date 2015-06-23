@@ -176,12 +176,12 @@ repminSimple = snd . Simple.runRewriteDag const minS minI rep' init
 -- that simply forcing a bit result takes some time.
 
 repmin_expTree n = bgroup "expTree"
-    [bench' (show n) repmin $ expTree n | n <- [startN..n]]
+    [bench' (show n) repmin' $ expTree n | n <- [startN..n]]
   -- Grows exponentially
 
 
 repmin_expDag n = bgroup "expDag"
-    [bench' (show n) repminG $ expDag n | n <- [startN..n]]
+    [bench' (show n) repminG' $ expDag n | n <- [startN..n]]
 
 repmin_expSimple n = bgroup "expSimple"
     [bench' (show n) repminSimple $ expSimple n | n <- [startN..n]]
@@ -191,7 +191,7 @@ repmin_linearSimple n = bgroup "linearSimple"
 
 
 repmin_linearDag n = bgroup "linearDag"
-    [bench' (show n) repminG $ linearDag n | n <- [startN..n]]
+    [bench' (show n) repminG' $ linearDag n | n <- [startN..n]]
 
 
 repmin_linearSimpleBig n = bgroup "linearSimpleBig"
@@ -199,7 +199,7 @@ repmin_linearSimpleBig n = bgroup "linearSimpleBig"
 
 
 repmin_linearDagBig n = bgroup "linearDagBig"
-    [bench' (show n) repminG $ linearDag n | n <- [100,200..n]]
+    [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
 
 startN = 4
 
