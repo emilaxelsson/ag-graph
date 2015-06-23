@@ -268,6 +268,9 @@ repmin_linearDag n = bgroup "Dag"
     [bench' (show n) repminG' $ linearDag n | n <- [startN..n]]
 
 
+repmin_linearDagBigPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ linearDag n | n <- [100,200..n]]
+
 repmin_linearSimpleBig n = bgroup "Simple"
     [bench' (show n) repminSimple' $ linearSimple n | n <- [100,200..n]]
 
@@ -417,6 +420,7 @@ main = do
 
 
     defaultMainWith (conf "repmin_big_linear") [repmin_linearSimpleBig 1000
+                                               ,repmin_linearDagBigPAG 1000
                                                ,repmin_linearDagBig    1000]
 
 
