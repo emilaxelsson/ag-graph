@@ -12,7 +12,7 @@ import Data.Set (Set)
 
 import qualified Data.Map as Map
 
-
+import System.Directory
 import System.IO.Unsafe (unsafePerformIO)
 
 import AG
@@ -487,6 +487,8 @@ startN = 4
 
 
 main = do
+    createDirectoryIfMissing False "reports"
+  
     defaultMainWith (conf "reduce_exp")          [reduce_expTree         16
                                                  ,reduce_expDag          16
                                                  ,reduce_expSimple       16]
