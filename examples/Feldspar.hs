@@ -13,8 +13,6 @@
 
 module Feldspar where
 
-
-
 import Control.Applicative
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
@@ -33,7 +31,7 @@ import Dag.Render
 import AG
 import Dag.AG
 import Dag.Rename
-import Paper (trueIntersection)
+import TypeInf (trueIntersection)
 
 
 

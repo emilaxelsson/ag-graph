@@ -31,7 +31,6 @@ module DagSimple
     ) where
 
 import Control.Applicative
-import Control.Exception.Base
 import Control.Monad.State
 import DagSimple.Internal
 import Tree
@@ -41,24 +40,12 @@ import qualified Data.Foldable as Foldable (toList)
 import qualified Data.HashMap.Lazy as HashMap
 import Data.IntMap
 import qualified Data.IntMap as IntMap
-import Data.IORef
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
-import Data.Typeable
 import System.Mem.StableName
-
 import Control.Monad.Writer
-
 import Data.HashMap.Lazy (HashMap)
-import qualified Data.HashMap.Lazy as HashMap
-
-import Control.Monad.ST
-
 import Data.List
-import Data.STRef
-import qualified Data.Vector as Vec
-import qualified Data.Vector.Generic.Mutable as MVec
-
 import Safe
 
 

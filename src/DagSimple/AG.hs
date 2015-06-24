@@ -33,7 +33,6 @@ module DagSimple.AG
     ) where
 
 import Control.Monad.ST
-import Control.Monad.State
 import AG.Internal
 import qualified AG.Internal as I hiding (explicit)
 import DagSimple as I
@@ -42,7 +41,6 @@ import Mapping as I
 import Projection as I
 import Tree as I
 import qualified Data.IntMap as IntMap
-import Data.IntMap (IntMap)
 import Data.Maybe
 import Data.STRef
 import qualified Data.Traversable as Traversable
@@ -50,7 +48,6 @@ import Data.Vector (Vector,MVector)
 import qualified Data.Vector as Vec
 import Data.Vector ((!))
 import qualified Data.Vector.Generic.Mutable as MVec
-import Control.Monad.Writer
 
 
 -- | This function runs an attribute grammar on a dag. The result is

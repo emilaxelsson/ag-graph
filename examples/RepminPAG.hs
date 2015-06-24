@@ -15,7 +15,7 @@
 
 module RepminPAG where
 
-import Paper (IntTreeF(..))
+import LeavesBelow (IntTreeF(..))
 import PAG
 import Dag.PAG
 

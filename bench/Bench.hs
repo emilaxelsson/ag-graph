@@ -4,16 +4,12 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-
-
-
-
 import Criterion.Main
 
 import Criterion.Types
 import Control.DeepSeq
 import Data.Set (Set)
-import Data.Map (Map)
+
 import qualified Data.Map as Map
 
 
@@ -23,14 +19,16 @@ import AG
 import Dag
 import Dag.Internal
 import Dag.AG
-import qualified PAG
-import qualified Dag.PAG as PAG
+
+
 import qualified RepminPAG as PAG
 
 import qualified DagSimple as Simple
 import qualified DagSimple.Internal as Simple
 import qualified DagSimple.AG as Simple
-import Paper hiding (Exp(..))
+import LeavesBelow
+import TypeInf hiding (Exp(..))
+import Repmin
 import qualified Feldspar
 import Feldspar (Feldspar (..),sizeInfS,sizeInfI,sizeInf,constFoldS,simplifier,simplify,renameFeld)
 

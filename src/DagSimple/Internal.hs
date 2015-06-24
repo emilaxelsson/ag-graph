@@ -15,7 +15,6 @@
 
 module DagSimple.Internal where
 
-import Tree
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
 
