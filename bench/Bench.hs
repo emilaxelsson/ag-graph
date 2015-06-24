@@ -279,6 +279,103 @@ repmin_linearDagBig n = bgroup "Dag"
     [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
 
 
+------------------
+-- repminDouble --
+------------------
+
+repDouble' ::  (MinI :< atts) => Rewrite IntTreeF atts IntTreeF
+repDouble' (Leaf i)    =  In (Node (In (Leaf globMin)) (In (Leaf i)))
+repDouble' (Node a b)  =  In (Node (Ret a) (Ret b))
+
+
+repDouble ::  (MinI :< atts) => Syn IntTreeF atts (Tree IntTreeF)
+repDouble (Leaf i)    =  In (Node (In (Leaf globMin)) (In (Leaf i)))
+repDouble (Node a b)  =  In (Node (below a) (below b))
+
+
+repminDoubleSimple' :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminDoubleSimple' = snd . Simple.runRewriteDag const minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDoubleSimple :: Simple.Dag IntTreeF -> Simple.Tree IntTreeF
+repminDoubleSimple =  snd . Simple.runAGDag const (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+
+repminDoubleG' :: Dag IntTreeF -> Dag IntTreeF
+repminDoubleG' = snd . runRewriteDag const minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDouble' :: Tree IntTreeF -> Tree IntTreeF
+repminDouble' = snd . runRewrite minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDouble :: Tree IntTreeF -> Tree IntTreeF
+repminDouble = snd . runAG (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+repminDoubleG :: Dag IntTreeF -> Tree IntTreeF
+repminDoubleG =  snd . runAGDag const (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+
+
+repminDouble_expTreeAG n = bgroup "TreeAG"
+    [bench' (show n) repminDouble $ expTree n | n <- [startN..n]]
+
+repminDouble_expTreePAG n = bgroup "TreePAG"
+    [bench' (show n) PAG.repminDouble $ expTree n | n <- [startN..n]]
+
+repminDouble_expTree n = bgroup "Tree"
+    [bench' (show n) repminDouble' $ expTree n | n <- [startN..n]]
+
+repminDouble_expDagAG n = bgroup "DagAG"
+    [bench' (show n) repminDoubleG $ expDag n | n <- [startN..n]]
+
+repminDouble_expDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ expDag n | n <- [startN..n]]
+
+repminDouble_expDag n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ expDag n | n <- [startN..n]]
+
+    
+repminDouble_expSimpleAG n = bgroup "SimpleAG"
+    [bench' (show n) repminDoubleSimple $ expSimple n | n <- [startN..n]]
+
+repminDouble_expSimple n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ expSimple n | n <- [startN..n]]
+
+
+repminDouble_linearSimpleAG n = bgroup "SimpleAG"
+    [bench' (show n) repminDoubleSimple $ linearSimple n | n <- [startN..n]]
+
+repminDouble_linearSimple n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ linearSimple n | n <- [startN..n]]
+
+
+repminDouble_linearDagAG n = bgroup "DagAG"
+    [bench' (show n) repminDoubleG $ linearDag n | n <- [startN..n]]
+
+repminDouble_linearDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ linearDag n | n <- [startN..n]]
+
+
+repminDouble_linearDag n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ linearDag n | n <- [startN..n]]
+
+
+repminDouble_linearDagBigPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ linearDag n | n <- [100,200..n]]
+
+repminDouble_linearSimpleBig n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ linearSimple n | n <- [100,200..n]]
+
+
+repminDouble_linearDagBig n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ linearDag n | n <- [100,200..n]]
+
+
+
 -----------------
 -- leavesBelow --
 -----------------
@@ -422,6 +519,27 @@ main = do
     defaultMainWith (conf "repmin_big_linear") [repmin_linearSimpleBig 1000
                                                ,repmin_linearDagBigPAG 1000
                                                ,repmin_linearDagBig    1000]
+
+
+    defaultMainWith (conf "repminDouble_exp")          [repminDouble_expTreeAG       16
+                                                 ,repminDouble_expTreePAG      16
+                                                 ,repminDouble_expTree         16
+                                                 ,repminDouble_expDagAG        16
+                                                 ,repminDouble_expDagPAG       16
+                                                 ,repminDouble_expDag          16
+                                                 ,repminDouble_expSimpleAG     16
+                                                 ,repminDouble_expSimple       16]
+
+    defaultMainWith (conf "repminDouble_linear")        [repminDouble_linearDagAG     16
+                                                  ,repminDouble_linearDagPAG    16
+                                                  ,repminDouble_linearDag       16
+                                                  ,repminDouble_linearSimpleAG  16
+                                                  ,repminDouble_linearSimple    16]
+
+
+    defaultMainWith (conf "repminDouble_big_linear") [repminDouble_linearSimpleBig 1000
+                                               ,repminDouble_linearDagBigPAG 1000
+                                               ,repminDouble_linearDagBig    1000]
 
 
     defaultMainWith (conf "leavesBelow_exp")          [leavesBelow_expTree         16

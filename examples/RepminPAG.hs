@@ -57,6 +57,23 @@ repmin :: Tree IntTreeF -> Tree IntTreeF
 repmin = unI . ffst . runPAG (rep |*| minS) minI  init
   where init (_ :*: MinS i) = MinI (iLeaf i)
 
+repDouble ::  (MinI :< atts) => Syn IntTreeF atts I IntTreeF
+repDouble (Leaf i)    =  I $ iNode (Ret globMin) (iLeaf i)
+repDouble (Node a b)  =  I $ iNode (Ret $ unI $ below a) (Ret $ unI $ below b)
+
+
+
+repminDoubleG :: Dag IntTreeF -> Dag IntTreeF
+repminDoubleG = unI . ffst . runPAGDag const (repDouble |*| minS) minI  init
+  where init (_ :*: MinS i) = MinI (iLeaf i)
+
+
+repminDouble :: Tree IntTreeF -> Tree IntTreeF
+repminDouble = unI . ffst . runPAG (repDouble |*| minS) minI  init
+  where init (_ :*: MinS i) = MinI (iLeaf i)
+
+
+
 
 it1 :: Tree IntTreeF
 it1 = iNode (iNode x (iLeaf 10)) x
