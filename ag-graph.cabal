@@ -8,6 +8,9 @@ copyright:           Copyright (c) 2014 Patrick Bahr and Emil Axelsson
 build-type:          Simple
 cabal-version:       >=1.10
 
+extra-source-files:
+  examples/*.hs
+
 library
   hs-source-dirs:   src
   Exposed-Modules:  AG
