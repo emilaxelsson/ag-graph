@@ -11,6 +11,7 @@ module TypeInf where
 
 
 
+import Control.Monad (join)
 import Data.Foldable (Foldable (..))
 import qualified Data.Foldable as Foldable
 import Data.IntMap (IntMap)
@@ -75,7 +76,7 @@ double' a = Let "a" a (Add (Var "a") (Var "a"))
 e2' = iterate double' (LitI 5) !! 8
 
 data  Type  = BoolType | IntType deriving (Eq, Show)
-type  Env   = Map Name Type
+type  Env   = Map Name (Maybe Type)
 
 typeInf' :: Env -> Exp -> Maybe Type
 typeInf' env (LitB _)                    =  Just BoolType
@@ -101,11 +102,10 @@ typeInf' env (Iter v n i b)
 typeInf' _ _                             =  Nothing
 
 insertEnv :: Name -> Maybe Type -> Env -> Env
-insertEnv v Nothing   env  =  env
-insertEnv v (Just t)  env  =  Map.insert v t env
+insertEnv v t env  =  Map.insert v t env
 
 lookEnv :: Name -> Env -> Maybe Type
-lookEnv = Map.lookup
+lookEnv v = join . Map.lookup v
 
 e3 = Iter "s" (LitI 5) (LitI 1) $ Add (Var "s") (LitI 2)
 

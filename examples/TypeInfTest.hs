@@ -85,7 +85,7 @@ test5  = typeInf Map.empty $ unravelDag exp5             -- Nothing
 test5G = typeInfG Map.empty exp5                         -- Nothing
 test5R = typeInfG Map.empty $ rename' exp5               -- Nothing
 
-env = Map.fromList [("x",IntType)]
+env = Map.fromList [("x", Just IntType)]
 
 test5'  = typeInf env $ unravelDag exp5                  -- Just
 test5G' = typeInfG env exp5                              -- loop
