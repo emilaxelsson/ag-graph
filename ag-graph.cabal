@@ -1,5 +1,5 @@
 name:                ag-graph
-version:             0.1
+version:             0.2
 synopsis:            Attribute grammars on graphs
 license:             BSD3
 license-file:        LICENSE
@@ -8,15 +8,40 @@ copyright:           Copyright (c) 2014 Patrick Bahr and Emil Axelsson
 build-type:          Simple
 cabal-version:       >=1.10
 
+extra-source-files:
+  examples/*.hs
+
 library
-  exposed-modules:
-    AG,
-    Dag,
-    Paper
+  hs-source-dirs:   src
+  Exposed-Modules:  AG
+                    PAG
+                    Dag
+                    Dag.AG
+                    Dag.PAG
+                    Dag.Rename
+                    Dag.Render
+                    Dot
+                    DagSimple
+                    DagSimple.AG
+  Other-Modules:    Dag.Internal
+                    DagSimple.Internal
+                    AG.Internal
+                    PAG.Internal
+                    Mapping
+                    Tree
+                    Variables
+                    Projection
+                    Projection.Simple
+                    Projection.TypeFam
+                    PAG.Projection
+                    PAG.Projection.Simple
+                    PAG.Projection.TypeFam
+                    PAG.Product
 
   build-depends:
     base <5,
     containers,
+    language-dot,
     unordered-containers,
     mtl,
     safe,
@@ -27,7 +52,8 @@ library
 benchmark bench
   type:             exitcode-stdio-1.0
   default-language: Haskell2010
-  hs-source-dirs:   bench .
+  hs-source-dirs:   bench src examples
   main-is:          Bench.hs
-  build-depends:    base, containers, criterion, deepseq, safe, mtl, unordered-containers, vector
+  build-depends:    base, containers, criterion, deepseq, safe, mtl, unordered-containers, vector,
+                    language-dot, process, filepath, directory
   ghc-options:      -O2

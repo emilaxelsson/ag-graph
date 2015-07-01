@@ -1,28 +1,39 @@
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ImplicitParams #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
-module Paper where
+
+
+module TypeInf where
 
 
 
+import Control.Monad (join)
 import Data.Foldable (Foldable (..))
+import qualified Data.Foldable as Foldable
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Set (Set)
+
 import qualified Data.Set as Set
-import Data.Traversable (Traversable (..))
-import Control.Monad
-import Control.Applicative
-import System.IO.Unsafe
 
 
+
+import System.Directory (getTemporaryDirectory)
+import System.FilePath ((</>))
+import System.IO.Unsafe -- Only for testing
+import System.Process (system)
+
+import Variables
+import Dag.Internal
 import AG
-import Dag
+import Dag.AG
+import Dag.Rename
+import Dag.Render
 
 
 
@@ -30,89 +41,6 @@ trueIntersection :: (Ord k, Eq v) => Map k v -> Map k v -> Map k v
 trueIntersection = Map.mergeWithKey (\_ x1 x2 -> if x1 == x2 then Just x1 else Nothing)
                      (const Map.empty) (const Map.empty)
 
-
-
--- The code from the paper
-
---------------------------------------------------------------------------------
--- * leavesBelow
---------------------------------------------------------------------------------
-
-data IntTree = Leaf' Int | Node' IntTree IntTree
-  deriving (Eq, Show)
-
-iNode x y = In (Node x y)
-iLeaf i = In (Leaf i)
-
-t =  let  a  =  Node (Node (Leaf 2) (Leaf 3)) (Leaf 4)
-     in   Node a a
-
-leavesBelow :: Int -> IntTree -> Set Int
-leavesBelow d (Leaf' i)
-    | d <= 0                 =  Set.singleton i
-    | otherwise              =  Set.empty
-leavesBelow d (Node' t1 t2)  =
-    leavesBelow (d-1) t1 `Set.union` leavesBelow (d-1) t2
-
-data IntTreeF a = Leaf Int | Node a a
-  deriving (Eq, Show)
-
-instance Foldable IntTreeF where
-    foldr _ z (Leaf _) = z
-    foldr f z (Node x y) = x `f` (y `f` z)
-
-instance Functor IntTreeF where
-    fmap _ (Leaf i) = Leaf i
-    fmap f (Node x y) = Node (f x) (f y)
-
-instance Traversable IntTreeF where
-    mapM _ (Leaf i) = return (Leaf i)
-    mapM f (Node x y) = liftM2 Node (f x) (f y)
-
-    traverse _ (Leaf i) = pure (Leaf i)
-    traverse f (Node x y) = liftA2 Node (f x) (f y)
-
-
-leavesBelowI :: Inh IntTreeF atts Int
-leavesBelowI (Leaf i)      = o
-leavesBelowI (Node t1 t2)  = t1 |-> d' & t2 |-> d'
-            where d' = above - 1
-
-leavesBelowS :: (Int :< atts) => Syn IntTreeF atts (Set Int)
-leavesBelowS (Leaf i)
-    | (above :: Int) <= 0  =  Set.singleton i
-    | otherwise            =  Set.empty
-leavesBelowS (Node t1 t2)  =  below t1 `Set.union` below t2
-
-leavesBelow' :: Int -> Tree IntTreeF -> Set Int
-leavesBelow' d = runAG leavesBelowS leavesBelowI (const d)
-
-leavesBelowG :: Int -> Dag IntTreeF -> Set Int
-leavesBelowG d = runAGDag min leavesBelowS leavesBelowI (const d)
-
-it1 :: Tree IntTreeF
-it1 = iNode (iNode x (iLeaf 10)) x
-    where x = iNode y y
-          y = iLeaf 20
-
-i1 :: Dag IntTreeF
-i1 = unsafePerformIO $ reifyDag it1
-
-
-it2 :: Tree IntTreeF
-it2 = iNode x (iNode (iLeaf 5) x)
-    where x = iNode (iNode (iLeaf 24) (iLeaf 3)) (iLeaf 4)
-
-i2 :: Dag IntTreeF
-i2 = unsafePerformIO $ reifyDag it2
-
-
-intTreeTestG1 = leavesBelowG 3 i1
-intTreeTestT1 = leavesBelow' 3 (unravelDag i1)
-
-
-intTreeTestG2 = leavesBelowG 3 i2
-intTreeTestT2 = leavesBelow' 3 (unravelDag i2)
 
 
 
@@ -148,7 +76,7 @@ double' a = Let "a" a (Add (Var "a") (Var "a"))
 e2' = iterate double' (LitI 5) !! 8
 
 data  Type  = BoolType | IntType deriving (Eq, Show)
-type  Env   = Map Name Type
+type  Env   = Map Name (Maybe Type)
 
 typeInf' :: Env -> Exp -> Maybe Type
 typeInf' env (LitB _)                    =  Just BoolType
@@ -174,11 +102,10 @@ typeInf' env (Iter v n i b)
 typeInf' _ _                             =  Nothing
 
 insertEnv :: Name -> Maybe Type -> Env -> Env
-insertEnv v Nothing   env  =  env
-insertEnv v (Just t)  env  =  Map.insert v t env
+insertEnv v t env  =  Map.insert v t env
 
 lookEnv :: Name -> Env -> Maybe Type
-lookEnv = Map.lookup
+lookEnv v = join . Map.lookup v
 
 e3 = Iter "s" (LitI 5) (LitI 1) $ Add (Var "s") (LitI 2)
 
@@ -194,10 +121,10 @@ data ExpF a  =  LitB' Bool   |  LitI' Int  |  Var' Name
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 iIter n x y z = In (Iter' n x y z)
-iAdd x y = In (Add' x y)
-iVar x = In (Var' x)
-iLitI l = In (LitI' l)
-iLitB l = In (LitB' l)
+iAdd x y      = In (Add' x y)
+iVar x        = In (Var' x)
+iLitI l       = In (LitI' l)
+iLitB l       = In (LitB' l)
 
 typeOf ::  (?below :: a -> atts, Maybe Type :< atts) =>
            a -> Maybe Type
@@ -255,7 +182,6 @@ gt2 = iIter "x" x (iIter "x" x x y) y
 g2 :: Dag ExpF
 g2 = unsafePerformIO $ reifyDag gt2
 
-
 gt3 :: Tree ExpF
 gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
     where x = iLitI 10
@@ -264,7 +190,6 @@ gt3 = iAdd (iIter "x" x x z) (iIter "x" y y z)
 
 g3 :: Dag ExpF
 g3 = unsafePerformIO $ reifyDag gt3
-
 
 
 typeTestG1 = typeInfG Map.empty g1
@@ -279,86 +204,123 @@ typeTestG3 = typeInfG Map.empty g3
 typeTestT3 = typeInf Map.empty (unravelDag g3)
 
 
-
 --------------------------------------------------------------------------------
--- * Repmin
---------------------------------------------------------------------------------
-
-newtype MinS = MinS Int deriving (Eq,Ord)
-newtype MinI = MinI Int
-
-globMin  ::  (?above :: atts, MinI :< atts) => Int
-globMin  =   let MinI i = above in i
-
-minS ::  Syn IntTreeF atts MinS
-minS (Leaf i)    =  MinS i
-minS (Node a b)  =  min (below a) (below b)
-
-minI :: Inh IntTreeF atts MinI
-minI _ = o
-
-rep ::  (MinI :< atts) => Syn IntTreeF atts (Tree IntTreeF)
-rep (Leaf i)    =  In (Leaf globMin)
-rep (Node a b)  =  In (Node (below a) (below b))
-
-repmin :: Tree IntTreeF -> Tree IntTreeF
-repmin = snd . runAG (minS |*| rep) minI init
-  where init (MinS i,_) = MinI i
-
-repminG :: Dag IntTreeF -> Tree IntTreeF
-repminG =  snd . runAGDag const (minS |*| rep) minI init
-  where init (MinS i,_) = MinI i
-
-rep' ::  (MinI :< atts) => Rewrite IntTreeF atts IntTreeF
-rep' (Leaf i)    =  In (Leaf globMin)
-rep' (Node a b)  =  In (Node (Ret a) (Ret b))
-
-repmin' :: Tree IntTreeF -> Tree IntTreeF
-repmin' = snd . runRewrite minS minI rep' init
-  where init (MinS i) = MinI i
-
-repminG' :: Dag IntTreeF -> Dag IntTreeF
-repminG' = snd . runRewriteDagST const minS minI rep' init
-  where init (MinS i) = MinI i
-
-repminTestG1  = repminG i1
-repminTestG1' = repminG' i1
-repminTestT1  = repmin (unravelDag i1)
-
-repminTestG2  = repminG i2
-repminTestG2' = repminG' i2
-repminTestT2  = repmin (unravelDag i2)
-
-
-
---------------------------------------------------------------------------------
--- * Circuit
+-- Testing
 --------------------------------------------------------------------------------
 
-type Circuit = Dag IntTreeF
+-- | To be able to render the DAGs using 'renderDag'
+instance ShowConstr ExpF
+  where
+    showConstr (LitB' b)       = show b
+    showConstr (LitI' i)       = show i
+    showConstr (Var' v)        = v
+    showConstr (Eq' _ _)       = "Eq"
+    showConstr (Add' _ _)      = "Eq"
+    showConstr (If' _ _ _)     = "Eq"
+    showConstr (Iter' v _ _ _) = "Iter " ++ v
 
-newtype Delay  = Delay  Int  deriving (Eq,Ord,Show,Num)
-newtype Load   = Load   Int  deriving (Eq,Ord,Show,Num)
+instance IsVar Name
+  where
+    newVar = ('v':) . show
 
-gateDelay :: (Load :< atts) => Syn IntTreeF atts Delay
-gateDelay (Leaf _)    = 0
-gateDelay (Node a b)  =
-  max (below a) (below b) + 10 + Delay l
-    where Load l = above
+instance HasVars ExpF Name
+  where
+    isVar (Var' v) = Just v
+    isVar _        = Nothing
 
-gateLoad :: Inh IntTreeF atts Load
-gateLoad (Node a b)  = a |-> 1 & b |-> 1
-gateLoad _           = o
+    mkVar = Var'
 
-delay :: Circuit -> Load -> Delay
-delay g l = runAGDag (+) gateDelay gateLoad (const l) g
+    bindsVars (Iter' v k i b)
+        = k |-> Set.empty
+        & i |-> Set.empty
+        & b |-> Set.singleton v
+    bindsVars _ = Dag.AG.empty
 
-delayTree :: Tree IntTreeF -> Load -> Delay
-delayTree c l = runAG gateDelay gateLoad (const l) c
+    renameVars (Iter' v (k,kvs) (i,ivs) (b,bvs)) =
+        case (Set.toList kvs ++ Set.toList ivs, Set.toList bvs) of
+          ([],[v']) -> Iter' v' k i b
+    renameVars f = fmap fst f
 
-circTestG1 = delay i1 3
-circTestT1 = delayTree (unravelDag i1) 3
+instance EqConstr ExpF
+  where
+    eqConstr (LitB' b1)      (LitB' b2)      = b1==b2
+    eqConstr (LitI' i1)      (LitI' i2)      = i1==i2
+    eqConstr (Var' v1)       (Var' v2)       = v1==v2
+    eqConstr (Eq' _ _)       (Eq' _ _)       = True
+    eqConstr (Add' _ _)      (Add' _ _)      = True
+    eqConstr (If' _ _ _)     (If' _ _ _)     = True
+    eqConstr (Iter' _ _ _ _) (Iter' _ _ _ _) = True
+    eqConstr _ _ = False
 
-circTestG2 = delay i2 3
-circTestT2 = delayTree (unravelDag i2) 3
+-- | Make the DAG well-scoped
+rename' :: Dag ExpF -> Dag ExpF
+rename' = rename (Just "")
+
+alphaEq' :: Tree ExpF -> Tree ExpF -> Bool
+alphaEq' = alphaEq (Nothing :: Maybe Name)
+
+-- | Like 'flatten' but adds the root as a node in the graph
+flatten' :: Traversable f => Dag f -> (Node, IntMap (f Node), Int)
+flatten' d = (n, IntMap.insert n f m, n+1)
+  where
+    (f,m,n) = flatten d
+
+-- | List the variable occurrences along with their scopes. Each variable in the
+-- scope is paired with the node at which it is bound.
+scope :: Dag ExpF -> [(Name,Node)] -> [(Name, [(Name,Node)])]
+scope g env = go env r
+  where
+    (r,es,_) = flatten' g
+
+    go env n = case es IntMap.! n of
+      Var' v -> [(v,env)]
+      Iter' v k i b
+          -> go env k
+          ++ go env i
+          ++ go ((v,n):[vn | vn <- env, fst vn /= v]) b
+      f -> concat $ Foldable.toList $ fmap (go env) f
+
+groups :: Ord k => [(k,a)] -> [[a]]
+groups ks = Map.elems $ Map.fromListWith (++) [(k,[a]) | (k,a) <- ks]
+
+allEq :: Eq a => [a] -> Bool
+allEq []     = True
+allEq (a:as) = all (==a) as
+
+-- | Check that no single name is paired with two different nodes
+checkVar :: [(Name,Node)] -> Bool
+checkVar = all allEq . groups
+
+-- | Check for well-scopedness according to the paper
+isWellScoped :: Dag ExpF -> Bool
+isWellScoped g = all checkVar $ fmap concat $ groups sc
+  where
+    sc = scope g []
+
+-- | Renaming does not changes semantics
+prop_rename1 g = unravelDag g `alphaEq'` unravelDag (rename' g)
+
+-- | Renaming does not decrease the number of edges
+prop_rename2 g = length (IntMap.toList $ edges g) <= length (IntMap.toList $ edges $ rename' g)
+
+-- | Renaming produces a well-scoped DAG
+prop_rename3 g = isWellScoped $ rename' g
+
+testRenamer
+    | allOK     = putStrLn "All tests passed"
+    | otherwise = putStrLn "Failed"
+  where
+    gs = [g1,g2,g3]
+    allOK = all prop_rename1 gs
+         && all prop_rename2 gs
+         && all prop_rename3 gs
+
+-- | Render a DAG as SVG
+astToSvg :: Dag ExpF -> IO ()
+astToSvg d = do
+    tmpd <- getTemporaryDirectory
+    let tmpf = tmpd </> "523452345234"
+    renderDag d tmpf
+    system $ "dot -Tsvg " ++ tmpf ++ " -o ast.svg"
+    return ()
 

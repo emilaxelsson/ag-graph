@@ -4,20 +4,33 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-
-
-
-
 import Criterion.Main
 
 import Criterion.Types
 import Control.DeepSeq
+import Data.Set (Set)
+
+import qualified Data.Map as Map
+
+import System.Directory
+import System.IO.Unsafe (unsafePerformIO)
 
 import AG
+import Dag
+import Dag.Internal
+import Dag.AG
+
+
+import qualified RepminPAG as PAG
+
 import qualified DagSimple as Simple
-import qualified DagFree as Free
-import qualified Dag as Dag
-import Paper
+import qualified DagSimple.Internal as Simple
+import qualified DagSimple.AG as Simple
+import LeavesBelow
+import TypeInf hiding (Exp(..))
+import Repmin
+import qualified Feldspar
+import Feldspar (Feldspar (..),sizeInfS,sizeInfI,sizeInf,constFoldS,simplifier,simplify,renameFeld)
 
 
 
@@ -48,15 +61,46 @@ instance NFDataF f => NFData (Simple.Dag f)
   where
     rnf (Simple.Dag r es n) = rnf r `seq` rnf n `seq` rnf (fmap rnfF es)
 
-instance NFDataF f => NFData (Dag.Dag f)
+instance NFDataF f => NFData (Dag f)
   where
-    rnf (Dag.Dag r es n) = rnfF r `seq` rnf n `seq` rnf (fmap rnfF es)
+    rnf (Dag r es n) = rnfF r `seq` rnf n `seq` rnf (fmap rnfF es)
 
 
 instance NFDataF IntTreeF
   where
     rnfF (Leaf l)   = rnf l `seq` ()
     rnfF (Node a b) = rnf a `seq` rnf b `seq` ()
+
+instance NFDataF Feldspar where
+  rnfF (Var n) = rnf n `seq` ()
+  rnfF (LitB b) = rnf b `seq` ()
+  rnfF (LitI i) = rnf i `seq` ()
+  rnfF (Add x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Sub x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Mul x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Eq x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Min x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Max x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (If x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Let x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Arr x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Ix x y) = rnf x `seq` rnf y `seq` ()
+
+instance NFData Type where
+  rnf BoolType = ()
+  rnf IntType = ()
+
+instance NFDataF ExpF where
+  rnfF (Var' n) = rnf n `seq` ()
+  rnfF (LitB' b) = rnf b `seq` ()
+  rnfF (LitI' i) = rnf i `seq` ()
+  rnfF (Add' x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (Eq' x y) = rnf x `seq` rnf y `seq` ()
+  rnfF (If' x y z) = rnf x `seq` rnf y `seq` rnf z `seq` ()
+  rnfF (Iter' w x y z) = rnf w `seq` rnf x `seq` rnf y `seq` rnf z `seq` ()
+
+
+
 
 expTree :: Int -> Tree IntTreeF
 expTree 1 = In $ Leaf 10
@@ -65,9 +109,6 @@ expTree n = In $ Node (expTree (n-1)) (expTree (n-1))
 expSimple :: Int -> Simple.Dag IntTreeF
 expSimple = Simple.termTree . expTree
 
-expFree :: Int -> Free.Dag IntTreeF
-expFree = Free.termTree . expTree
-
 expDag :: Int -> Dag.Dag IntTreeF
 expDag = Dag.termTree . expTree
 
@@ -75,12 +116,9 @@ linearSimple :: Int -> Simple.Dag IntTreeF
 linearSimple n = Simple.mkDag 0 $
     [(k, Node (k+1) (k+1)) | k <- [0..n-2] ] ++ [(n-1, Leaf 10)]
 
-linearFree :: Int -> Free.Dag IntTreeF
-linearFree n = Simple.mkDag 0 $
-    [(k, In $ Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-2] ] ++ [(n-1, In (Leaf 10))]
 
 linearDag :: Int -> Dag.Dag IntTreeF
-linearDag n = Dag.mkDag (Node (Ret 0) (Ret 0))  $
+linearDag n = mkDag (Node (Ret 0) (Ret 0))  $
     [(k, Node (Ret (k+1)) (Ret (k+1))) | k <- [0..n-3] ] ++ [(n-2, Leaf 10)]
 
 
@@ -95,11 +133,10 @@ linearDag n = Dag.mkDag (Node (Ret 0) (Ret 0))  $
 -- efficiency of the run functions themselves.
 --
 -- The benchmark is run with different AG implementations and dag
--- representations. The names of the benchmarks use "Dag", "Free" and
--- "Simple" to indicate that they use the "Dag", "DagFree" and
--- "DagSimple" module, respectively. The suffix "ST" indicates that
--- the mutable vector implementation is used. The benchmarks mentioned
--- in the paper use the mutable vector implementation.
+-- representations. The names of the benchmarks use "Dag" and "Simple"
+-- to indicate that they use the "Dag" and "DagSimple" module,
+-- respectively.  The benchmarks mentioned in the paper use the
+-- mutable vector implementation.
 
 
 newtype Value = Value Int deriving (Eq, Ord, Show, Num, Enum)
@@ -120,101 +157,40 @@ depth _ = o
 reduce :: Tree IntTreeF -> Int
 reduce = fromEnum . runAG value depth (const 0)
 
-reduceGS :: Simple.Dag IntTreeF -> Int
-reduceGS = fromEnum . Simple.runAGDag max value depth (const 0)
+reduceS :: Simple.Dag IntTreeF -> Int
+reduceS = fromEnum . Simple.runAGDag max value depth (const 0)
 
-reduceGSST :: Simple.Dag IntTreeF -> Int
-reduceGSST = fromEnum . Simple.runAGDagST max value depth (const 0)
-
-
-reduceGF :: Free.Dag IntTreeF -> Int
-reduceGF = fromEnum . Free.runAGDag max value depth (const 0)
-
-reduceGFST :: Free.Dag IntTreeF -> Int
-reduceGFST = fromEnum . Free.runAGDagST max value depth (const 0)
-
-
-reduceG :: Dag.Dag IntTreeF -> Int
-reduceG = fromEnum . Dag.runAGDag max value depth (const 0)
-
-reduceGST :: Dag.Dag IntTreeF -> Int
-reduceGST = fromEnum . Dag.runAGDagST max value depth (const 0)
+reduceG :: Dag IntTreeF -> Int
+reduceG = fromEnum . runAGDag max value depth (const 0)
 
 bench' str f arg = rnf arg `seq` bench str (nf f arg)
 
-reduce_expTree n = bgroup "expTree"
+reduce_expTree n = bgroup "Tree"
     [bench' (show n) reduce $ expTree n | n <- [startN..n]]
   -- Grows exponentially
 
-reduce_expSimple n = bgroup "expSimple"
-    [bench' (show n) reduceGS $ expSimple n | n <- [startN..n]]
+reduce_expSimple n = bgroup "Simple"
+    [bench' (show n) reduceS $ expSimple n | n <- [startN..n]]
 
-reduce_expSimpleST n = bgroup "expSimpleST"
-    [bench' (show n) reduceGSST $ expSimple n | n <- [startN..n]]
-
-reduce_expFree n = bgroup "expFree"
-    [bench' (show n) reduceGF $ expFree n | n <- [startN..n]]
-
-reduce_expDag n = bgroup "expDag"
+reduce_expDag n = bgroup "Dag"
     [bench' (show n) reduceG $ expDag n | n <- [startN..n]]
 
 
-reduce_expFreeST n = bgroup "expFreeST"
-    [bench' (show n) reduceGFST $ expFree n | n <- [startN..n]]
-
-reduce_expDagST n = bgroup "expDagST"
-    [bench' (show n) reduceGST $ expDag n | n <- [startN..n]]
-
-
-reduce_linearSimple n = bgroup "linearSimple"
-    [bench' (show n) reduceGS $ linearSimple n | n <- [startN..n]]
+reduce_linearSimple n = bgroup "Simple"
+    [bench' (show n) reduceS $ linearSimple n | n <- [startN..n]]
   -- Grows linearly
 
-reduce_linearSimpleST n = bgroup "linearSimpleST"
-    [bench' (show n) reduceGSST $ linearSimple n | n <- [startN..n]]
-  -- Grows linearly
-
-
-reduce_linearFree n = bgroup "linearFree"
-    [bench' (show n) reduceGF $ linearFree n | n <- [startN..n]]
-  -- Grows linearly
-
-reduce_linearFreeST n = bgroup "linearFreeST"
-    [bench' (show n) reduceGFST $ linearFree n | n <- [startN..n]]
-  -- Grows linearly
-
-reduce_linearDag n = bgroup "linearDag"
+reduce_linearDag n = bgroup "Dag"
     [bench' (show n) reduceG $ linearDag n | n <- [startN..n]]
   -- Grows linearly
 
-reduce_linearDagST n = bgroup "linearDagST"
-    [bench' (show n) reduceGST $ linearDag n | n <- [startN..n]]
-  -- Grows linearly
-
-
-reduce_linearSimpleBig n = bgroup "linearSimpleBig"
-    [bench' (show n) reduceGS $ linearSimple n | n <- [100,200..n]]
-  -- Grows linearly even for sizes that are out of reach for `reduce`
-
-reduce_linearSimpleBigST n = bgroup "linearSimpleBigST"
-    [bench' (show n) reduceGSST $ linearSimple n | n <- [100,200..n]]
+reduce_linearSimpleBig n = bgroup "Simple"
+    [bench' (show n) reduceS $ linearSimple n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
-reduce_linearFreeBig n = bgroup "linearFreeBig"
-    [bench' (show n) reduceGF $ linearFree n | n <- [100,200..n]]
-  -- Grows linearly even for sizes that are out of reach for `reduce`
-
-reduce_linearFreeBigST n = bgroup "linearFreeBigST"
-    [bench' (show n) reduceGFST $ linearFree n | n <- [100,200..n]]
-  -- Grows linearly even for sizes that are out of reach for `reduce`
-
-reduce_linearDagBig n = bgroup "linearDagBig"
-    [bench' (show n) reduceGF $ linearFree n | n <- [100,200..n]]
-  -- Grows linearly even for sizes that are out of reach for `reduce`
-
-reduce_linearDagBigST n = bgroup "linearDagBigST"
-    [bench' (show n) reduceGST $ linearDag n | n <- [100,200..n]]
+reduce_linearDagBig n = bgroup "Dag"
+    [bench' (show n) reduceG $ linearDag n | n <- [100,200..n]]
   -- Grows linearly even for sizes that are out of reach for `reduce`
 
 
@@ -230,22 +206,14 @@ conf name = defaultConfig
 -- * Repmin
 --------------------------------------------------------------------------------
 
-repminFreeST :: Free.Dag IntTreeF -> Free.Dag IntTreeF
-repminFreeST = snd . Free.runRewriteDagST const minS minI rep' init
-  where init (MinS i) = MinI i
+
+repminSimple :: Simple.Dag IntTreeF -> Simple.Tree IntTreeF
+repminSimple =  snd . Simple.runAGDag const (minS |*| rep) minI init
+  where init (MinS i,_) = MinI i
 
 
-repminSimpleST :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
-repminSimpleST = snd . Simple.runRewriteDagST const minS minI rep' init
-  where init (MinS i) = MinI i
-
-repminSimple :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
-repminSimple = snd . Simple.runRewriteDag const minS minI rep' init
-  where init (MinS i) = MinI i
-
-
-repminGST :: Dag.Dag IntTreeF -> Dag.Dag IntTreeF
-repminGST = snd . Dag.runRewriteDagST const minS minI rep' init
+repminSimple' :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminSimple' = snd . Simple.runRewriteDag const minS minI rep' init
   where init (MinS i) = MinI i
 
 
@@ -253,118 +221,343 @@ repminGST = snd . Dag.runRewriteDagST const minS minI rep' init
 -- important difference is that `repmin` produces a tree as result, which means
 -- that simply forcing a bit result takes some time.
 
-repmin_expTree n = bgroup "expTree"
+
+repmin_expTreeAG n = bgroup "TreeAG"
     [bench' (show n) repmin $ expTree n | n <- [startN..n]]
-  -- Grows exponentially
+
+repmin_expTreePAG n = bgroup "TreePAG"
+    [bench' (show n) PAG.repmin $ expTree n | n <- [startN..n]]
+
+repmin_expTree n = bgroup "Tree"
+    [bench' (show n) repmin' $ expTree n | n <- [startN..n]]
+
+repmin_expDagAG n = bgroup "DagAG"
+    [bench' (show n) repminG $ expDag n | n <- [startN..n]]
+
+repmin_expDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ expDag n | n <- [startN..n]]
+
+repmin_expDag n = bgroup "Dag"
+    [bench' (show n) repminG' $ expDag n | n <- [startN..n]]
 
 
-repmin_expFreeST n = bgroup "expFreeST"
-    [bench' (show n) repminFreeST $ expFree n | n <- [startN..n]]
-
-repmin_expDagST n = bgroup "expDagST"
-    [bench' (show n) repminGST $ expDag n | n <- [startN..n]]
-
-repmin_expSimple n = bgroup "expSimple"
+repmin_expSimpleAG n = bgroup "SimpleAG"
     [bench' (show n) repminSimple $ expSimple n | n <- [startN..n]]
 
-repmin_expSimpleST n = bgroup "expSimpleST"
-    [bench' (show n) repminSimpleST $ expSimple n | n <- [startN..n]]
+repmin_expSimple n = bgroup "Simple"
+    [bench' (show n) repminSimple' $ expSimple n | n <- [startN..n]]
 
 
-repmin_linearSimple n = bgroup "linearSimple"
+repmin_linearSimpleAG n = bgroup "SimpleAG"
     [bench' (show n) repminSimple $ linearSimple n | n <- [startN..n]]
 
-
-repmin_linearSimpleST n = bgroup "linearSimpleST"
-    [bench' (show n) repminSimpleST $ linearSimple n | n <- [startN..n]]
-
-
-repmin_linearFreeST n = bgroup "linearFreeST"
-    [bench' (show n) repminFreeST $ linearFree n | n <- [startN..n]]
-
-repmin_linearDagST n = bgroup "linearDagST"
-    [bench' (show n) repminGST $ linearDag n | n <- [startN..n]]
+repmin_linearSimple n = bgroup "Simple"
+    [bench' (show n) repminSimple' $ linearSimple n | n <- [startN..n]]
 
 
-repmin_linearSimpleBig n = bgroup "linearSimpleBig"
-    [bench' (show n) repminSimple $ linearSimple n | n <- [100,200..n]]
+repmin_linearDagAG n = bgroup "DagAG"
+    [bench' (show n) repminG $ linearDag n | n <- [startN..n]]
+
+repmin_linearDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ linearDag n | n <- [startN..n]]
 
 
-repmin_linearSimpleBigST n = bgroup "linearSimpleBigST"
-    [bench' (show n) repminSimpleST $ linearSimple n | n <- [100,200..n]]
+repmin_linearDag n = bgroup "Dag"
+    [bench' (show n) repminG' $ linearDag n | n <- [startN..n]]
 
 
-repmin_linearFreeBigST n = bgroup "linearFreeBigST"
-    [bench' (show n) repminFreeST $ linearFree n | n <- [100,200..n]]
+repmin_linearDagBigPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminG $ linearDag n | n <- [100,200..n]]
 
-repmin_linearDagBigST n = bgroup "linearDagBigST"
-    [bench' (show n) repminGST $ linearDag n | n <- [100,200..n]]
+repmin_linearSimpleBig n = bgroup "Simple"
+    [bench' (show n) repminSimple' $ linearSimple n | n <- [100,200..n]]
+
+
+repmin_linearDagBig n = bgroup "Dag"
+    [bench' (show n) repminG' $ linearDag n | n <- [100,200..n]]
+
+
+------------------
+-- repminDouble --
+------------------
+
+repDouble' ::  (MinI :< atts) => Rewrite IntTreeF atts IntTreeF
+repDouble' (Leaf i)    =  In (Node (In (Leaf globMin)) (In (Leaf i)))
+repDouble' (Node a b)  =  In (Node (Ret a) (Ret b))
+
+
+repDouble ::  (MinI :< atts) => Syn IntTreeF atts (Tree IntTreeF)
+repDouble (Leaf i)    =  In (Node (In (Leaf globMin)) (In (Leaf i)))
+repDouble (Node a b)  =  In (Node (below a) (below b))
+
+
+repminDoubleSimple' :: Simple.Dag IntTreeF -> Simple.Dag IntTreeF
+repminDoubleSimple' = snd . Simple.runRewriteDag const minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDoubleSimple :: Simple.Dag IntTreeF -> Simple.Tree IntTreeF
+repminDoubleSimple =  snd . Simple.runAGDag const (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+
+repminDoubleG' :: Dag IntTreeF -> Dag IntTreeF
+repminDoubleG' = snd . runRewriteDag const minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDouble' :: Tree IntTreeF -> Tree IntTreeF
+repminDouble' = snd . runRewrite minS minI repDouble' init
+  where init (MinS i) = MinI i
+
+repminDouble :: Tree IntTreeF -> Tree IntTreeF
+repminDouble = snd . runAG (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+repminDoubleG :: Dag IntTreeF -> Tree IntTreeF
+repminDoubleG =  snd . runAGDag const (minS |*| repDouble) minI init
+  where init (MinS i,_) = MinI i
+
+
+
+repminDouble_expTreeAG n = bgroup "TreeAG"
+    [bench' (show n) repminDouble $ expTree n | n <- [startN..n]]
+
+repminDouble_expTreePAG n = bgroup "TreePAG"
+    [bench' (show n) PAG.repminDouble $ expTree n | n <- [startN..n]]
+
+repminDouble_expTree n = bgroup "Tree"
+    [bench' (show n) repminDouble' $ expTree n | n <- [startN..n]]
+
+repminDouble_expDagAG n = bgroup "DagAG"
+    [bench' (show n) repminDoubleG $ expDag n | n <- [startN..n]]
+
+repminDouble_expDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ expDag n | n <- [startN..n]]
+
+repminDouble_expDag n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ expDag n | n <- [startN..n]]
+
+    
+repminDouble_expSimpleAG n = bgroup "SimpleAG"
+    [bench' (show n) repminDoubleSimple $ expSimple n | n <- [startN..n]]
+
+repminDouble_expSimple n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ expSimple n | n <- [startN..n]]
+
+
+repminDouble_linearSimpleAG n = bgroup "SimpleAG"
+    [bench' (show n) repminDoubleSimple $ linearSimple n | n <- [startN..n]]
+
+repminDouble_linearSimple n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ linearSimple n | n <- [startN..n]]
+
+
+repminDouble_linearDagAG n = bgroup "DagAG"
+    [bench' (show n) repminDoubleG $ linearDag n | n <- [startN..n]]
+
+repminDouble_linearDagPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ linearDag n | n <- [startN..n]]
+
+
+repminDouble_linearDag n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ linearDag n | n <- [startN..n]]
+
+
+repminDouble_linearDagBigPAG n = bgroup "DagPAG"
+    [bench' (show n) PAG.repminDoubleG $ linearDag n | n <- [100,200..n]]
+
+repminDouble_linearSimpleBig n = bgroup "Simple"
+    [bench' (show n) repminDoubleSimple' $ linearSimple n | n <- [100,200..n]]
+
+
+repminDouble_linearDagBig n = bgroup "Dag"
+    [bench' (show n) repminDoubleG' $ linearDag n | n <- [100,200..n]]
+
+
+
+-----------------
+-- leavesBelow --
+-----------------
+
+leavesBelowSimple :: Int -> Simple.Dag IntTreeF -> Set Int
+leavesBelowSimple d = Simple.runAGDag min leavesBelowS leavesBelowI (const d)
+
+
+leavesBelow_expTree n = bgroup "Tree"
+    [bench' (show n) (leavesBelow' 20) $ expTree n | n <- [startN..n]]
+
+
+leavesBelow_expSimple n = bgroup "Simple"
+    [bench' (show n) (leavesBelowSimple 20) $ expSimple n | n <- [startN..n]]
+
+leavesBelow_expDag n = bgroup "Dag"
+    [bench' (show n) (leavesBelowG 20) $ expDag n | n <- [startN..n]]
+
+
+leavesBelow_linearSimple n = bgroup "Simple"
+    [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [startN..n]]
+
+
+leavesBelow_linearDag n = bgroup "Dag"
+    [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [startN..n]]
+
+
+leavesBelow_linearSimpleBig n = bgroup "Simple"
+    [bench' (show n) (leavesBelowSimple 20) $ linearSimple n | n <- [100,200..n]]
+
+
+leavesBelow_linearDagBig n = bgroup "Dag"
+    [bench' (show n) (leavesBelowG 20) $ linearDag n | n <- [100,200..n]]
+
+-----------------------
+-- Feldspar simplify --
+-----------------------
+
+simplifySimple :: Simple.Dag Feldspar -> Simple.Dag Feldspar
+simplifySimple
+    = snd
+    . Simple.runRewriteDag
+        trueIntersection
+        (sizeInfS |*| constFoldS)
+        sizeInfI
+        simplifier
+        (const Map.empty)
+
+simplifyDag :: Dag Feldspar -> Dag Feldspar
+simplifyDag
+    = snd
+    . runRewriteDag
+        trueIntersection
+        (sizeInfS |*| constFoldS)
+        sizeInfI
+        simplifier
+        (const Map.empty)
+
+
+
+exTree :: [Tree Feldspar]
+exTree = map Feldspar.unData [Feldspar.ex1, Feldspar.ex2, Feldspar.ex3]
+
+exDag :: [Dag Feldspar]
+{-# NOINLINE exDag #-}
+exDag = map renameFeld $ unsafePerformIO $ mapM reifyDag exTree
+
+exSimple :: [Simple.Dag Feldspar]
+exSimple = map Simple.toSimple exDag
+
+simplify_Tree = bgroup "Tree"
+    [bench' (show n) simplify $ exTree !! n | n <- [0..length exTree -1]]
+
+simplify_Dag = bgroup "Dag"
+    [bench' (show n) simplifyDag $ exDag !! n | n <- [0..length exDag - 1 ]]
+
+simplify_Simple = bgroup "Simple"
+    [bench' (show n) simplifySimple $ exSimple !! n | n <- [0..length exSimple - 1]]
+
+
+--------------------
+-- type inference --
+--------------------
+
+typeInfSimple :: Env -> Simple.Dag ExpF -> Maybe Type
+typeInfSimple env = Simple.runAGDag trueIntersection typeInfS typeInfI (const env)
+
+
+exlTree :: [Tree ExpF]
+exlTree = [gt1,gt2,gt3]
+
+exlDag :: [Dag ExpF]
+{-# NOINLINE exlDag #-}
+exlDag = map rename' . unsafePerformIO $ mapM reifyDag exlTree
+
+exlSimple :: [Simple.Dag ExpF]
+exlSimple = map Simple.toSimple exlDag
+
+typeInf_Tree = bgroup "Tree"
+    [bench' (show n) (typeInf Map.empty) $ exlTree !! n | n <- [0..length exlTree -1]]
+
+typeInf_Dag = bgroup "Dag"
+    [bench' (show n) (typeInfG Map.empty) $ exlDag !! n | n <- [0..length exlDag - 1 ]]
+
+typeInf_Simple = bgroup "Simple"
+    [bench' (show n) (typeInfSimple Map.empty) $ exlSimple !! n | n <- [0..length exlSimple - 1]]
+
+
 
 startN = 4
 
 
 main = do
+    createDirectoryIfMissing False "reports"
+  
+    defaultMainWith (conf "reduce_exp")          [reduce_expTree         16
+                                                 ,reduce_expDag          16
+                                                 ,reduce_expSimple       16]
 
-    -- all benchmarks --
- 
-    -- defaultMainWith (conf "reduce_expTree")            [reduce_expTree           16]
-    -- defaultMainWith (conf "reduce_expSimple")          [reduce_expSimple         16]
-    -- defaultMainWith (conf "reduce_expSimpleST")        [reduce_expSimpleST       16]
-    -- defaultMainWith (conf "reduce_expFree")            [reduce_expFree           16]
-    -- defaultMainWith (conf "reduce_expFreeST")          [reduce_expFreeST         16]
-    -- defaultMainWith (conf "reduce_expDag")             [reduce_expDag            16]
-    -- defaultMainWith (conf "reduce_expDagST")           [reduce_expDagST          16]
+    defaultMainWith (conf "reduce_linear")        [reduce_linearDag       16
+                                                  ,reduce_linearSimple    16]
 
-    -- defaultMainWith (conf "reduce_linearSimple")       [reduce_linearSimple      16]
-    -- defaultMainWith (conf "reduce_linearSimpleST")     [reduce_linearSimpleST    16]
-    -- defaultMainWith (conf "reduce_linearFree")         [reduce_linearFree        16]
-    -- defaultMainWith (conf "reduce_linearFreeST")       [reduce_linearFreeST      16]
-    -- defaultMainWith (conf "reduce_linearDag")          [reduce_linearDag         16]
-    -- defaultMainWith (conf "reduce_linearDagST")        [reduce_linearDagST       16]
-
-    -- defaultMainWith (conf "reduce_big_linearSimple")   [reduce_linearSimpleBig     1000]
-    -- defaultMainWith (conf "reduce_big_linearSimpleST") [reduce_linearSimpleBigST   1000]
-    -- defaultMainWith (conf "reduce_big_linearFree")     [reduce_linearFreeBig     1000]
-    -- defaultMainWith (conf "reduce_big_linearFreeST")   [reduce_linearFreeBigST   1000]
-    -- defaultMainWith (conf "reduce_big_linearDag")      [reduce_linearDagBig      1000]
-    -- defaultMainWith (conf "reduce_big_linearDagST")    [reduce_linearDagBigST    1000]
-
-    -- defaultMainWith (conf "repmin_expTree")            [repmin_expTree           16]
-    -- defaultMainWith (conf "repmin_expSimple")          [repmin_expSimple         12]  -- OBS only up to 12
-    -- defaultMainWith (conf "repmin_expSimpleST")        [repmin_expSimpleST       12]
-    -- defaultMainWith (conf "repmin_expFreeST")          [repmin_expFreeST         16]
-    -- defaultMainWith (conf "repmin_expDagST")           [repmin_expDagST          16]
-
-    -- defaultMainWith (conf "repmin_linearSimple")       [repmin_linearSimple      16]
-    -- defaultMainWith (conf "repmin_linearSimpleST")     [repmin_linearSimpleST    16]
-    -- defaultMainWith (conf "repmin_linearFreeST")       [repmin_linearFreeST      16]
-    -- defaultMainWith (conf "repmin_linearDagST")        [repmin_linearDagST       16]
-
-    -- defaultMainWith (conf "repmin_big_linearSimple")   [repmin_linearSimpleBig   1000]
-    -- defaultMainWith (conf "repmin_big_linearSimpleST") [repmin_linearSimpleBigST 1000]
-    -- defaultMainWith (conf "repmin_big_linearFreeST")   [repmin_linearFreeBigST   1000]
-    -- defaultMainWith (conf "repmin_big_linearDagST")    [repmin_linearDagBigST    1000]
+    defaultMainWith (conf "reduce_big_linear")    [reduce_linearDagBig    1000
+                                                  ,reduce_linearSimpleBig 1000]
 
 
-    -- benchmarks from the paper --
+    defaultMainWith (conf "repmin_exp")          [repmin_expTreeAG       16
+                                                 ,repmin_expTreePAG      16
+                                                 ,repmin_expTree         16
+                                                 ,repmin_expDagAG        16
+                                                 ,repmin_expDagPAG       16
+                                                 ,repmin_expDag          16
+                                                 ,repmin_expSimpleAG     16
+                                                 ,repmin_expSimple       16]
 
-    defaultMainWith (conf "reduce_expTree")            [reduce_expTree           16]
-    defaultMainWith (conf "reduce_expDagST")           [reduce_expDagST          16]
-    defaultMainWith (conf "reduce_linearDagST")        [reduce_linearDagST       16]
-
-    defaultMainWith (conf "reduce_expSimple")          [reduce_expSimple         16]
-    defaultMainWith (conf "reduce_linearSimple")       [reduce_linearSimple      16]
-
-    defaultMainWith (conf "reduce_big_linearSimpleST") [reduce_linearSimpleBigST 1000]
-    defaultMainWith (conf "reduce_big_linearDagST")    [reduce_linearDagBigST    1000]
+    defaultMainWith (conf "repmin_linear")        [repmin_linearDagAG     16
+                                                  ,repmin_linearDagPAG    16
+                                                  ,repmin_linearDag       16
+                                                  ,repmin_linearSimpleAG  16
+                                                  ,repmin_linearSimple    16]
 
 
-    defaultMainWith (conf "repmin_expTree")            [repmin_expTree           16]
-    defaultMainWith (conf "repmin_expSimpleST")        [repmin_expSimpleST       16]
-    defaultMainWith (conf "repmin_expDagST")           [repmin_expDagST          16]
+    defaultMainWith (conf "repmin_big_linear") [repmin_linearSimpleBig 1000
+                                               ,repmin_linearDagBigPAG 1000
+                                               ,repmin_linearDagBig    1000]
 
-    defaultMainWith (conf "repmin_linearSimpleST")     [repmin_linearSimpleST    16]
-    defaultMainWith (conf "repmin_linearDagST")        [repmin_linearDagST       16]
 
-    defaultMainWith (conf "repmin_big_linearSimpleST") [repmin_linearSimpleBigST 1000]
-    defaultMainWith (conf "repmin_big_linearDagST")    [repmin_linearDagBigST    1000]
+    defaultMainWith (conf "repminDouble_exp")          [repminDouble_expTreeAG       16
+                                                 ,repminDouble_expTreePAG      16
+                                                 ,repminDouble_expTree         16
+                                                 ,repminDouble_expDagAG        16
+                                                 ,repminDouble_expDagPAG       16
+                                                 ,repminDouble_expDag          16
+                                                 ,repminDouble_expSimpleAG     16
+                                                 ,repminDouble_expSimple       16]
+
+    defaultMainWith (conf "repminDouble_linear")        [repminDouble_linearDagAG     16
+                                                  ,repminDouble_linearDagPAG    16
+                                                  ,repminDouble_linearDag       16
+                                                  ,repminDouble_linearSimpleAG  16
+                                                  ,repminDouble_linearSimple    16]
+
+
+    defaultMainWith (conf "repminDouble_big_linear") [repminDouble_linearSimpleBig 1000
+                                               ,repminDouble_linearDagBigPAG 1000
+                                               ,repminDouble_linearDagBig    1000]
+
+
+    defaultMainWith (conf "leavesBelow_exp")          [leavesBelow_expTree         16
+                                                      ,leavesBelow_expDag          16
+                                                      ,leavesBelow_expSimple       16]
+
+    defaultMainWith (conf "leavesBelow_linear")        [leavesBelow_linearDag       16
+                                                       ,leavesBelow_linearSimple    16]
+
+    defaultMainWith (conf "leavesBelow_big_linear")    [leavesBelow_linearDagBig    1000
+                                                        ,leavesBelow_linearSimpleBig 1000]
+
+
+
+    defaultMainWith (conf "simplify")          [simplify_Tree
+                                               ,simplify_Dag
+                                               ,simplify_Simple]
+
+    defaultMainWith (conf "typeInf")          [typeInf_Tree
+                                              ,typeInf_Dag
+                                              ,typeInf_Simple]
