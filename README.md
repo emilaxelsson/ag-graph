@@ -4,6 +4,11 @@
 This repository contains the source code associated with the paper
 ["Generalising Tree Traversals to DAGs: Exploiting Sharing without the Pain" (PEPM 2015)](http://dx.doi.org/10.1145/2678015.2682539).
 
+The revised and extended implementation associated with the paper
+"Generalising Tree Traversals and Tree Transformations to DAGs"
+(submitted to Science of Computer Programming) is found in the
+[main branch](https://github.com/emilaxelsson/ag-graph).
+
 ## File Structure
 
   * Attribute grammars are defined in module [AG.hs](AG.hs).
