@@ -9,6 +9,9 @@ Programming.
 The technical report containing full proofs of all theorems in the
 paper is found [here](docs/tech-report.pdf).
 
+*Note:* the associated material for the PEPM 2015 paper "Generalising
+Tree Traversals to DAGs" is found in the
+[PEPM branch](https://github.com/emilaxelsson/ag-graph/tree/PEPM).
 
 ## File Structure
 
