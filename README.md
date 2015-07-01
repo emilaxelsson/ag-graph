@@ -1,5 +1,16 @@
-Attribute Grammars on DAGs
-==========================
+# Generalising Tree Traversals and Tree Transformations to DAGs
+
+
+This repository contains the source code associated with the paper
+"Generalising Tree Traversals and Tree Transformations to DAGs:
+Exploiting Sharing without the Pain" submitted to Science of Computer
+Programming.
+
+The technical report containing full proofs of all theorems in the
+paper is found [here](docs/tech-report.pdf).
+
+
+## File Structure
 
   * The library implementation is in the [src](src) subdirectory.
   * (Parametric) attribute grammars on trees are defined in the
