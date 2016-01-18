@@ -16,6 +16,7 @@ module Feldspar where
 import Control.Applicative
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
+import Data.Int
 import Data.List (genericLength, genericIndex)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -46,7 +47,7 @@ type Name = Integer
 data Feldspar a
     = Var Name
     | LitB Bool
-    | LitI Integer
+    | LitI Int32
     | Add a a
     | Sub a a
     | Mul a a
@@ -133,25 +134,25 @@ true, false :: Data Bool
 true  = Data $ In $ LitB True
 false = Data $ In $ LitB False
 
-instance Num (Data Integer)
+instance Num (Data Int32)
   where
     fromInteger = Data . In . LitI . fromInteger
     Data x + Data y = Data $ In $ Add x y
     Data x - Data y = Data $ In $ Sub x y
     Data x * Data y = Data $ In $ Mul x y
-    abs    = error "abs not implemented for Data Integer"
-    signum = error "signum not implemented for Data Integer"
+    abs    = error "abs not implemented for Data Int32"
+    signum = error "signum not implemented for Data Int32"
 
 -- | Equality
 (<=>) :: Eq a => Data a -> Data a -> Data Bool
 Data x <=> Data y = Data $ In $ Eq x y
 
 -- | Minimum of two integers
-minn :: Data Integer -> Data Integer -> Data Integer
+minn :: Data Int32 -> Data Int32 -> Data Int32
 minn (Data a) (Data b) = Data $ In $ Min a b
 
 -- | Maximum of two integers
-maxx :: Data Integer -> Data Integer -> Data Integer
+maxx :: Data Int32 -> Data Int32 -> Data Int32
 maxx (Data a) (Data b) = Data $ In $ Max a b
 
 -- | Conditional expression
@@ -179,8 +180,8 @@ share (Data a) f = Data $ In $ Let v a body
 
 -- | Array construction
 arr
-    :: Data Integer              -- ^ Length
-    -> (Data Integer -> Data a)  -- ^ Index mapping
+    :: Data Int32              -- ^ Length
+    -> (Data Int32 -> Data a)  -- ^ Index mapping
     -> Data [a]
 arr (Data l) ixf = Data $ In $ Arr l v body
   where
@@ -188,7 +189,7 @@ arr (Data l) ixf = Data $ In $ Arr l v body
     body = unData $ ixf $ Data $ In $ Var v
 
 -- | Array indexing
-(!) :: Data [a] -> Data Integer -> Data a
+(!) :: Data [a] -> Data Int32 -> Data a
 Data arr ! Data i = Data $ In $ Ix arr i
 
 
@@ -201,7 +202,7 @@ type Env a = Map Name a
 
 data Value
     = B Bool
-    | I Integer
+    | I Int32
     | L [Value]
   deriving (Eq, Show)
 
@@ -216,7 +217,7 @@ instance Typeable Bool
     fromVal (B b) = Just b
     fromVal _     = Nothing
 
-instance Typeable Integer
+instance Typeable Int32
   where
     toVal = I
     fromVal (I i) = Just i
@@ -228,7 +229,7 @@ instance Typeable a => Typeable [a]
     fromVal (L as) = mapM fromVal as
 
 evalBinOp
-    :: (Integer -> Integer -> Integer)
+    :: (Int32 -> Int32 -> Int32)
     -> Maybe Value -> Maybe Value -> Maybe Value
 evalBinOp op a b = do
     I a' <- a
@@ -276,14 +277,14 @@ eval (Data a) = case fromVal =<< eval' Map.empty a of
 --------------------------------------------------------------------------------
 
 -- | (lower bound, upper bound)
-type Range = (Maybe Integer, Maybe Integer)
+type Range = (Maybe Int32, Maybe Int32)
 
 -- | Lower bound of a range
-lower :: Range -> Maybe Integer
+lower :: Range -> Maybe Int32
 lower = fst
 
 -- | Upper bound of a range
-upper :: Range -> Maybe Integer
+upper :: Range -> Maybe Int32
 upper = snd
 
 -- | Range union
@@ -295,21 +296,21 @@ isSubRangeOf :: Range -> Range -> Bool
 isSubRangeOf r1 r2 = union r1 r2 == r2
 
 -- | Check whether the integer is in the given range
-inRange :: Integer -> Range -> Bool
-inRange i r = fromInteger i `isSubRangeOf` r
+inRange :: Int32 -> Range -> Bool
+inRange i r = fromIntegral i `isSubRangeOf` r
 
-instance Num (Maybe Integer)
+instance Num (Maybe Int32)
   where
-    fromInteger = Just
+    fromInteger = Just . fromInteger
     (+) = liftA2 (+)
     (-) = liftA2 (-)
     (*) = liftA2 (*)
-    abs    = error "abs not implemented for Maybe Integer"
-    signum = error "signum not implemented for Maybe Integer"
+    abs    = error "abs not implemented for Maybe Int32"
+    signum = error "signum not implemented for Maybe Int32"
 
 instance Num Range
   where
-    fromInteger i     = (Just i, Just i)
+    fromInteger i     = (Just $ fromInteger i, Just $ fromInteger i)
     (l1,u1) + (l2,u2) = (l1+l2, u1+u2)
     (l1,u1) - (l2,u2) = (l1-u2, u1-l2)
     (l1,u1) * (l2,u2) = (minimum bounds, maximum bounds)
@@ -374,7 +375,7 @@ sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn Feldspar atts Size
 -- Sizes of variables are obtained from the environment
 sizeInfS (Var v)   = lookEnv v above
 sizeInfS (LitB _)  = []
-sizeInfS (LitI i)  = [fromInteger i]
+sizeInfS (LitI i)  = [fromIntegral i]
 sizeInfS (Add a b) = zipWith (+) (sizeOf a) (sizeOf b)
 sizeInfS (Sub a b) = zipWith (-) (sizeOf a) (sizeOf b)
 sizeInfS (Mul a b) = zipWith (*) (sizeOf a) (sizeOf b)
@@ -404,7 +405,7 @@ sizeArrIx :: Size -> Size
 sizeArrIx [szl] = [(0, upper (szl-1))]
 
 -- | Extract an integer when the size is a singleton range
-viewSingleton :: Size -> Maybe Integer
+viewSingleton :: Size -> Maybe Int32
 viewSingleton [(Just l, Just u)] | l == u = Just l
 viewSingleton _ = Nothing
 
@@ -418,8 +419,8 @@ valueOfB a = do
     B b <- below a
     return b
 
--- | Get the folded value of a sub-expression, projected to 'Integer'
-valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Integer
+-- | Get the folded value of a sub-expression, projected to 'Int32'
+valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Int32
 valueOfI a = do
     I i <- below a
     return i
@@ -589,7 +590,7 @@ astToSvg_simp d = do
 --------------------------------------------------------------------------------
 
 -- Demonstrate simplification of the shared node `a`
-ex1 :: Data [Integer]
+ex1 :: Data [Int32]
 ex1 = let a = 2+3
       in  arr a $ \i -> a + a*i
 
@@ -599,7 +600,7 @@ test1_simp = astToSvg_simp ex1
 -- Demonstrate simplification of the shared node `x`. `x` appears in different
 -- variable environments, and its simplification makes use of the size
 -- information for variable `i`.
-ex2 :: Data [Integer]
+ex2 :: Data [Int32]
 ex2 =
     arr 10 $ \i ->
       let x = maxx 20 i + i
@@ -612,7 +613,7 @@ test2_simp = astToSvg_simp ex2
 
 -- Demonstrate size-based simplification. The ranges of the expressions `a!2`
 -- and `b!3+800` are disjoint, so the `iff` expression reduces to `x`.
-ex3 :: Data [Integer]
+ex3 :: Data [Int32]
 ex3 =
     arr 10 $ \i ->
       let x = maxx 20 i
