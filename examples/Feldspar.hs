@@ -14,6 +14,8 @@
 module Feldspar where
 
 import Control.Applicative
+import Data.Bits hiding (complement, (.|.))
+import qualified Data.Bits as Bits
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.Int
@@ -58,24 +60,33 @@ data Feldspar a
     | Let Name a a  -- `Let v x y` means "let v be x in y"
     | Arr a Name a  -- `Arr l i b` means `map (\i -> b) [0..l-1]`
     | Ix a a        -- `Ix arr i`  means `arr !! i`
+      -- Bit manipulation
+    | BitCompl a  -- complement
+    | BitOr a a   -- bitwise or
+    | BitCount a  -- number of set bits
+    | Shr a Int   -- right shift
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | For rendering
 instance ShowConstr Feldspar
   where
-    showConstr (Var v)     = showVar v
-    showConstr (LitB b)    = show b
-    showConstr (LitI i)    = show i
-    showConstr (Add _ _)   = "Add"
-    showConstr (Sub _ _)   = "Sub"
-    showConstr (Mul _ _)   = "Mul"
-    showConstr (Eq _ _)    = "Eq"
-    showConstr (Min _ _)   = "Min"
-    showConstr (Max _ _)   = "Max"
-    showConstr (If _ _ _)  = "If"
-    showConstr (Let v _ _) = "Let " ++ showVar v
-    showConstr (Arr _ v _) = "Arr " ++ showVar v
-    showConstr (Ix _ _)    = "Ix"
+    showConstr (Var v)      = showVar v
+    showConstr (LitB b)     = show b
+    showConstr (LitI i)     = show i
+    showConstr (Add _ _)    = "Add"
+    showConstr (Sub _ _)    = "Sub"
+    showConstr (Mul _ _)    = "Mul"
+    showConstr (Eq _ _)     = "Eq"
+    showConstr (Min _ _)    = "Min"
+    showConstr (Max _ _)    = "Max"
+    showConstr (If _ _ _)   = "If"
+    showConstr (Let v _ _)  = "Let " ++ showVar v
+    showConstr (Arr _ v _)  = "Arr " ++ showVar v
+    showConstr (Ix _ _)     = "Ix"
+    showConstr (BitCompl _) = "BitCompl"
+    showConstr (BitOr _ _)  = "BitOr"
+    showConstr (BitCount _) = "BitCount"
+    showConstr (Shr _ n)    = "Shr ... " ++ show n
 
 showVar :: Name -> String
 showVar v = 'v' : show v
@@ -105,19 +116,23 @@ instance HasVars Feldspar Name
 
 instance EqConstr Feldspar
   where
-    eqConstr (Var v1)    (Var v2)    = v1==v2
-    eqConstr (LitB b1)   (LitB b2)   = b1==b2
-    eqConstr (LitI i1)   (LitI i2)   = i1==i2
-    eqConstr (Add _ _)   (Add _ _)   = True
-    eqConstr (Sub _ _)   (Sub _ _)   = True
-    eqConstr (Mul _ _)   (Mul _ _)   = True
-    eqConstr (Eq _ _)    (Eq _ _)    = True
-    eqConstr (Min _ _)   (Min _ _)   = True
-    eqConstr (Max _ _)   (Max _ _)   = True
-    eqConstr (If _ _ _)  (If _ _ _)  = True
-    eqConstr (Let _ _ _) (Let _ _ _) = True
-    eqConstr (Arr _ _ _) (Arr _ _ _) = True
-    eqConstr (Ix _ _)    (Ix _ _)    = True
+    eqConstr (Var v1)     (Var v2)     = v1==v2
+    eqConstr (LitB b1)    (LitB b2)    = b1==b2
+    eqConstr (LitI i1)    (LitI i2)    = i1==i2
+    eqConstr (Add _ _)    (Add _ _)    = True
+    eqConstr (Sub _ _)    (Sub _ _)    = True
+    eqConstr (Mul _ _)    (Mul _ _)    = True
+    eqConstr (Eq _ _)     (Eq _ _)     = True
+    eqConstr (Min _ _)    (Min _ _)    = True
+    eqConstr (Max _ _)    (Max _ _)    = True
+    eqConstr (If _ _ _)   (If _ _ _)   = True
+    eqConstr (Let _ _ _)  (Let _ _ _)  = True
+    eqConstr (Arr _ _ _)  (Arr _ _ _)  = True
+    eqConstr (Ix _ _)     (Ix _ _)     = True
+    eqConstr (BitCompl _) (BitCompl _) = True
+    eqConstr (BitOr _ _)  (BitOr _ _)  = True
+    eqConstr (BitCount _) (BitCount _) = True
+    eqConstr (Shr _ n1)   (Shr _ n2)   = n1==n2
     eqConstr _ _ = False
 
 
@@ -128,6 +143,14 @@ instance EqConstr Feldspar
 
 -- | The type of Feldspar expressions
 newtype Data a = Data { unData :: Tree Feldspar }
+
+-- | Construct a copy of an expression in which all sharing is lost
+destroySharing :: Data a -> Data a
+destroySharing = Data . cata In . unData
+
+-- | Compute the size of an expression ignoring all sharing
+astSize :: Data a -> Int
+astSize = cata (\f -> 1 + Foldable.sum f) . unData
 
 -- | Boolean constants
 true, false :: Data Bool
@@ -192,6 +215,18 @@ arr (Data l) ixf = Data $ In $ Arr l v body
 (!) :: Data [a] -> Data Int32 -> Data a
 Data arr ! Data i = Data $ In $ Ix arr i
 
+complement :: Data Int32 -> Data Int32
+complement (Data a) = Data $ In $ BitCompl a
+
+(.|.) :: Data Int32 -> Data Int32 -> Data Int32
+Data a .|. Data b = Data $ In $ BitOr a b
+
+bitCount :: Data Int32 -> Data Int32
+bitCount (Data a) = Data $ In $ BitCount a
+
+(.>>.) :: Data Int32 -> Int -> Data Int32
+Data a .>>. n = Data $ In $ Shr a n
+
 
 
 --------------------------------------------------------------------------------
@@ -227,6 +262,13 @@ instance Typeable a => Typeable [a]
   where
     toVal = L . map toVal
     fromVal (L as) = mapM fromVal as
+
+evalUnOp
+    :: (Int32 -> Int32)
+    -> Maybe Value -> Maybe Value
+evalUnOp op a = do
+    I a' <- a
+    return $ I $ op a'
 
 evalBinOp
     :: (Int32 -> Int32 -> Int32)
@@ -265,6 +307,16 @@ eval' env (In f) = case f of
         L as <- eval' env arr
         I i' <- eval' env i
         return $ genericIndex as i'
+    BitCompl a -> evalUnOp Bits.complement (eval' env a)
+    BitOr a b  -> evalBinOp (Bits..|.) (eval' env a) (eval' env b)
+    Shr a n    -> evalUnOp (flip shiftR n) (eval' env a)
+    BitCount a -> evalUnOp evalBitCount (eval' env a)
+      where
+        evalBitCount b = loop b (finiteBitSize b - 1) 0
+          where
+            loop x i n | i < 0       = n
+                       | testBit x i = loop x (i-1) (n+1)
+                       | otherwise   = loop x (i-1) n
 
 eval :: Typeable a => Data a -> a
 eval (Data a) = case fromVal =<< eval' Map.empty a of
@@ -389,6 +441,8 @@ sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
 sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
 sizeInfS (Ix arr i)  = tail (sizeOf arr)
+-- Bit operations, all returning Int32
+sizeInfS _ = [(Nothing,Nothing)]
 
 -- | Compute the inherited variable environment attribute for the
 -- sub-expressions of a node
@@ -637,4 +691,78 @@ testAll
          && all (\(Ex e) -> prop_sizeInfDag   e) es
          && all (\(Ex e) -> prop_simplifyEval e) es
          && all (\(Ex e) -> prop_simplifyDag  e) es
+         && checkIlog2
+
+
+
+--------------------------------------------------------------------------------
+-- * Programs with excessive sharing
+--------------------------------------------------------------------------------
+
+intSize :: Num a => a
+intSize = 32
+
+-- | Count leading zeros
+-- (Based on an algorithm in Hacker's Delight. Haskell implementation by Josef
+-- Svenningsson.)
+nlz :: Data Int32 -> Data Int32
+nlz x
+    = bitCount
+    $ complement
+    $ foldl go x
+    $ takeWhile (<intSize)
+    $ map (2^)
+    $ [(0::Integer)..]
+  where
+    go b s = b .|. (b .>>. s)
+
+-- | Integer logarithm in base 2
+-- (Based on an algorithm in Hacker's Delight. Haskell implementation by Josef
+-- Svenningsson.)
+ilog2 :: Data Int32 -> Data Int32
+ilog2 x = intSize - 1 - nlz x
+
+checkIlog2 =
+    [eval $ ilog2 $ fromInteger n | n <- [1..1100]]
+      ==
+    [floor (logBase 2 (fromInteger n)) | n <- [1..1100]]
+
+
+
+-- | Compute the maximal literal attribute for a node
+maxLitS :: Syn Feldspar atts Int32
+maxLitS (LitI i) = i
+maxLitS f        = Foldable.maximum $ fmap below f
+
+-- | Maximal literal in a Feldspar expression tree
+maxLit :: Tree Feldspar -> Int32
+maxLit = runAG maxLitS (\_ -> o) (const ())
+  -- This function is just an example of a simple function that visits all nodes
+  -- in an AST
+
+-- | Maximal literal in a Feldspar expression DAG
+maxLitDag :: Dag Feldspar -> Int32
+maxLitDag
+    = runAGDag
+        const
+        maxLitS
+        (\_ -> o)
+        (const ())
+    . renameFeld
+  -- This function is just an example of a simple function that visits all nodes
+  -- in an DAG
+
+
+
+test_nlz_tree = maxLit $ simplify $ unData $
+    ilog2 $ ilog2 $ ilog2 1000
+      -- This tree has 104644 nodes
+
+test_nlz_tree2 = maxLit $ simplify $ unData $
+    ilog2 $ ilog2 $ ilog2 $ ilog2 1000
+      -- This tree has 3348676 nodes
+
+test_nlz_Dag = maxLitDag $ simplifyDag $ unsafePerformIO $ reifyDag $ unData $
+    ilog2 $ ilog2 $ ilog2 $ ilog2 1000
+      -- This DAG has 65 nodes
 
