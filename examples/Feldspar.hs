@@ -14,8 +14,11 @@
 module Feldspar where
 
 import Control.Applicative
+import Data.Bits hiding (complement, (.|.))
+import qualified Data.Bits as Bits
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
+import Data.Int
 import Data.List (genericLength, genericIndex)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -46,7 +49,7 @@ type Name = Integer
 data Feldspar a
     = Var Name
     | LitB Bool
-    | LitI Integer
+    | LitI Int32
     | Add a a
     | Sub a a
     | Mul a a
@@ -57,24 +60,33 @@ data Feldspar a
     | Let Name a a  -- `Let v x y` means "let v be x in y"
     | Arr a Name a  -- `Arr l i b` means `map (\i -> b) [0..l-1]`
     | Ix a a        -- `Ix arr i`  means `arr !! i`
+      -- Bit manipulation
+    | BitCompl a  -- complement
+    | BitOr a a   -- bitwise or
+    | BitCount a  -- number of set bits
+    | Shr a Int   -- right shift
   deriving (Eq, Show, Functor, Foldable, Traversable)
 
 -- | For rendering
 instance ShowConstr Feldspar
   where
-    showConstr (Var v)     = showVar v
-    showConstr (LitB b)    = show b
-    showConstr (LitI i)    = show i
-    showConstr (Add _ _)   = "Add"
-    showConstr (Sub _ _)   = "Sub"
-    showConstr (Mul _ _)   = "Mul"
-    showConstr (Eq _ _)    = "Eq"
-    showConstr (Min _ _)   = "Min"
-    showConstr (Max _ _)   = "Max"
-    showConstr (If _ _ _)  = "If"
-    showConstr (Let v _ _) = "Let " ++ showVar v
-    showConstr (Arr _ v _) = "Arr " ++ showVar v
-    showConstr (Ix _ _)    = "Ix"
+    showConstr (Var v)      = showVar v
+    showConstr (LitB b)     = show b
+    showConstr (LitI i)     = show i
+    showConstr (Add _ _)    = "Add"
+    showConstr (Sub _ _)    = "Sub"
+    showConstr (Mul _ _)    = "Mul"
+    showConstr (Eq _ _)     = "Eq"
+    showConstr (Min _ _)    = "Min"
+    showConstr (Max _ _)    = "Max"
+    showConstr (If _ _ _)   = "If"
+    showConstr (Let v _ _)  = "Let " ++ showVar v
+    showConstr (Arr _ v _)  = "Arr " ++ showVar v
+    showConstr (Ix _ _)     = "Ix"
+    showConstr (BitCompl _) = "BitCompl"
+    showConstr (BitOr _ _)  = "BitOr"
+    showConstr (BitCount _) = "BitCount"
+    showConstr (Shr _ n)    = "Shr ... " ++ show n
 
 showVar :: Name -> String
 showVar v = 'v' : show v
@@ -104,19 +116,23 @@ instance HasVars Feldspar Name
 
 instance EqConstr Feldspar
   where
-    eqConstr (Var v1)    (Var v2)    = v1==v2
-    eqConstr (LitB b1)   (LitB b2)   = b1==b2
-    eqConstr (LitI i1)   (LitI i2)   = i1==i2
-    eqConstr (Add _ _)   (Add _ _)   = True
-    eqConstr (Sub _ _)   (Sub _ _)   = True
-    eqConstr (Mul _ _)   (Mul _ _)   = True
-    eqConstr (Eq _ _)    (Eq _ _)    = True
-    eqConstr (Min _ _)   (Min _ _)   = True
-    eqConstr (Max _ _)   (Max _ _)   = True
-    eqConstr (If _ _ _)  (If _ _ _)  = True
-    eqConstr (Let _ _ _) (Let _ _ _) = True
-    eqConstr (Arr _ _ _) (Arr _ _ _) = True
-    eqConstr (Ix _ _)    (Ix _ _)    = True
+    eqConstr (Var v1)     (Var v2)     = v1==v2
+    eqConstr (LitB b1)    (LitB b2)    = b1==b2
+    eqConstr (LitI i1)    (LitI i2)    = i1==i2
+    eqConstr (Add _ _)    (Add _ _)    = True
+    eqConstr (Sub _ _)    (Sub _ _)    = True
+    eqConstr (Mul _ _)    (Mul _ _)    = True
+    eqConstr (Eq _ _)     (Eq _ _)     = True
+    eqConstr (Min _ _)    (Min _ _)    = True
+    eqConstr (Max _ _)    (Max _ _)    = True
+    eqConstr (If _ _ _)   (If _ _ _)   = True
+    eqConstr (Let _ _ _)  (Let _ _ _)  = True
+    eqConstr (Arr _ _ _)  (Arr _ _ _)  = True
+    eqConstr (Ix _ _)     (Ix _ _)     = True
+    eqConstr (BitCompl _) (BitCompl _) = True
+    eqConstr (BitOr _ _)  (BitOr _ _)  = True
+    eqConstr (BitCount _) (BitCount _) = True
+    eqConstr (Shr _ n1)   (Shr _ n2)   = n1==n2
     eqConstr _ _ = False
 
 
@@ -128,30 +144,38 @@ instance EqConstr Feldspar
 -- | The type of Feldspar expressions
 newtype Data a = Data { unData :: Tree Feldspar }
 
+-- | Construct a copy of an expression in which all sharing is lost
+destroySharing :: Data a -> Data a
+destroySharing = Data . cata In . unData
+
+-- | Compute the size of an expression ignoring all sharing
+astSize :: Data a -> Int
+astSize = cata (\f -> 1 + Foldable.sum f) . unData
+
 -- | Boolean constants
 true, false :: Data Bool
 true  = Data $ In $ LitB True
 false = Data $ In $ LitB False
 
-instance Num (Data Integer)
+instance Num (Data Int32)
   where
     fromInteger = Data . In . LitI . fromInteger
     Data x + Data y = Data $ In $ Add x y
     Data x - Data y = Data $ In $ Sub x y
     Data x * Data y = Data $ In $ Mul x y
-    abs    = error "abs not implemented for Data Integer"
-    signum = error "signum not implemented for Data Integer"
+    abs    = error "abs not implemented for Data Int32"
+    signum = error "signum not implemented for Data Int32"
 
 -- | Equality
 (<=>) :: Eq a => Data a -> Data a -> Data Bool
 Data x <=> Data y = Data $ In $ Eq x y
 
 -- | Minimum of two integers
-minn :: Data Integer -> Data Integer -> Data Integer
+minn :: Data Int32 -> Data Int32 -> Data Int32
 minn (Data a) (Data b) = Data $ In $ Min a b
 
 -- | Maximum of two integers
-maxx :: Data Integer -> Data Integer -> Data Integer
+maxx :: Data Int32 -> Data Int32 -> Data Int32
 maxx (Data a) (Data b) = Data $ In $ Max a b
 
 -- | Conditional expression
@@ -179,8 +203,8 @@ share (Data a) f = Data $ In $ Let v a body
 
 -- | Array construction
 arr
-    :: Data Integer              -- ^ Length
-    -> (Data Integer -> Data a)  -- ^ Index mapping
+    :: Data Int32              -- ^ Length
+    -> (Data Int32 -> Data a)  -- ^ Index mapping
     -> Data [a]
 arr (Data l) ixf = Data $ In $ Arr l v body
   where
@@ -188,8 +212,20 @@ arr (Data l) ixf = Data $ In $ Arr l v body
     body = unData $ ixf $ Data $ In $ Var v
 
 -- | Array indexing
-(!) :: Data [a] -> Data Integer -> Data a
+(!) :: Data [a] -> Data Int32 -> Data a
 Data arr ! Data i = Data $ In $ Ix arr i
+
+complement :: Data Int32 -> Data Int32
+complement (Data a) = Data $ In $ BitCompl a
+
+(.|.) :: Data Int32 -> Data Int32 -> Data Int32
+Data a .|. Data b = Data $ In $ BitOr a b
+
+bitCount :: Data Int32 -> Data Int32
+bitCount (Data a) = Data $ In $ BitCount a
+
+(.>>.) :: Data Int32 -> Int -> Data Int32
+Data a .>>. n = Data $ In $ Shr a n
 
 
 
@@ -201,7 +237,7 @@ type Env a = Map Name a
 
 data Value
     = B Bool
-    | I Integer
+    | I Int32
     | L [Value]
   deriving (Eq, Show)
 
@@ -216,7 +252,7 @@ instance Typeable Bool
     fromVal (B b) = Just b
     fromVal _     = Nothing
 
-instance Typeable Integer
+instance Typeable Int32
   where
     toVal = I
     fromVal (I i) = Just i
@@ -227,8 +263,15 @@ instance Typeable a => Typeable [a]
     toVal = L . map toVal
     fromVal (L as) = mapM fromVal as
 
+evalUnOp
+    :: (Int32 -> Int32)
+    -> Maybe Value -> Maybe Value
+evalUnOp op a = do
+    I a' <- a
+    return $ I $ op a'
+
 evalBinOp
-    :: (Integer -> Integer -> Integer)
+    :: (Int32 -> Int32 -> Int32)
     -> Maybe Value -> Maybe Value -> Maybe Value
 evalBinOp op a b = do
     I a' <- a
@@ -264,6 +307,16 @@ eval' env (In f) = case f of
         L as <- eval' env arr
         I i' <- eval' env i
         return $ genericIndex as i'
+    BitCompl a -> evalUnOp Bits.complement (eval' env a)
+    BitOr a b  -> evalBinOp (Bits..|.) (eval' env a) (eval' env b)
+    Shr a n    -> evalUnOp (flip shiftR n) (eval' env a)
+    BitCount a -> evalUnOp evalBitCount (eval' env a)
+      where
+        evalBitCount b = loop b (finiteBitSize b - 1) 0
+          where
+            loop x i n | i < 0       = n
+                       | testBit x i = loop x (i-1) (n+1)
+                       | otherwise   = loop x (i-1) n
 
 eval :: Typeable a => Data a -> a
 eval (Data a) = case fromVal =<< eval' Map.empty a of
@@ -276,14 +329,14 @@ eval (Data a) = case fromVal =<< eval' Map.empty a of
 --------------------------------------------------------------------------------
 
 -- | (lower bound, upper bound)
-type Range = (Maybe Integer, Maybe Integer)
+type Range = (Maybe Int32, Maybe Int32)
 
 -- | Lower bound of a range
-lower :: Range -> Maybe Integer
+lower :: Range -> Maybe Int32
 lower = fst
 
 -- | Upper bound of a range
-upper :: Range -> Maybe Integer
+upper :: Range -> Maybe Int32
 upper = snd
 
 -- | Range union
@@ -295,21 +348,21 @@ isSubRangeOf :: Range -> Range -> Bool
 isSubRangeOf r1 r2 = union r1 r2 == r2
 
 -- | Check whether the integer is in the given range
-inRange :: Integer -> Range -> Bool
-inRange i r = fromInteger i `isSubRangeOf` r
+inRange :: Int32 -> Range -> Bool
+inRange i r = fromIntegral i `isSubRangeOf` r
 
-instance Num (Maybe Integer)
+instance Num (Maybe Int32)
   where
-    fromInteger = Just
+    fromInteger = Just . fromInteger
     (+) = liftA2 (+)
     (-) = liftA2 (-)
     (*) = liftA2 (*)
-    abs    = error "abs not implemented for Maybe Integer"
-    signum = error "signum not implemented for Maybe Integer"
+    abs    = error "abs not implemented for Maybe Int32"
+    signum = error "signum not implemented for Maybe Int32"
 
 instance Num Range
   where
-    fromInteger i     = (Just i, Just i)
+    fromInteger i     = (Just $ fromInteger i, Just $ fromInteger i)
     (l1,u1) + (l2,u2) = (l1+l2, u1+u2)
     (l1,u1) - (l2,u2) = (l1-u2, u1-l2)
     (l1,u1) * (l2,u2) = (minimum bounds, maximum bounds)
@@ -374,7 +427,7 @@ sizeInfS :: (Env Size :< atts, Maybe Value :< atts) => Syn Feldspar atts Size
 -- Sizes of variables are obtained from the environment
 sizeInfS (Var v)   = lookEnv v above
 sizeInfS (LitB _)  = []
-sizeInfS (LitI i)  = [fromInteger i]
+sizeInfS (LitI i)  = [fromIntegral i]
 sizeInfS (Add a b) = zipWith (+) (sizeOf a) (sizeOf b)
 sizeInfS (Sub a b) = zipWith (-) (sizeOf a) (sizeOf b)
 sizeInfS (Mul a b) = zipWith (*) (sizeOf a) (sizeOf b)
@@ -388,6 +441,8 @@ sizeInfS (If _ t f)  = zipWith union (sizeOf t) (sizeOf f)
 sizeInfS (Let _ _ b) = sizeOf b
 sizeInfS (Arr l _ b) = sizeOf l ++ sizeOf b -- sizeOf l should have length 1
 sizeInfS (Ix arr i)  = tail (sizeOf arr)
+-- Bit operations, all returning Int32
+sizeInfS _ = [(Nothing,Nothing)]
 
 -- | Compute the inherited variable environment attribute for the
 -- sub-expressions of a node
@@ -404,7 +459,7 @@ sizeArrIx :: Size -> Size
 sizeArrIx [szl] = [(0, upper (szl-1))]
 
 -- | Extract an integer when the size is a singleton range
-viewSingleton :: Size -> Maybe Integer
+viewSingleton :: Size -> Maybe Int32
 viewSingleton [(Just l, Just u)] | l == u = Just l
 viewSingleton _ = Nothing
 
@@ -418,8 +473,8 @@ valueOfB a = do
     B b <- below a
     return b
 
--- | Get the folded value of a sub-expression, projected to 'Integer'
-valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Integer
+-- | Get the folded value of a sub-expression, projected to 'Int32'
+valueOfI :: (?below :: a -> atts, Maybe Value :< atts) => a -> Maybe Int32
 valueOfI a = do
     I i <- below a
     return i
@@ -589,7 +644,7 @@ astToSvg_simp d = do
 --------------------------------------------------------------------------------
 
 -- Demonstrate simplification of the shared node `a`
-ex1 :: Data [Integer]
+ex1 :: Data [Int32]
 ex1 = let a = 2+3
       in  arr a $ \i -> a + a*i
 
@@ -599,7 +654,7 @@ test1_simp = astToSvg_simp ex1
 -- Demonstrate simplification of the shared node `x`. `x` appears in different
 -- variable environments, and its simplification makes use of the size
 -- information for variable `i`.
-ex2 :: Data [Integer]
+ex2 :: Data [Int32]
 ex2 =
     arr 10 $ \i ->
       let x = maxx 20 i + i
@@ -612,7 +667,7 @@ test2_simp = astToSvg_simp ex2
 
 -- Demonstrate size-based simplification. The ranges of the expressions `a!2`
 -- and `b!3+800` are disjoint, so the `iff` expression reduces to `x`.
-ex3 :: Data [Integer]
+ex3 :: Data [Int32]
 ex3 =
     arr 10 $ \i ->
       let x = maxx 20 i
@@ -636,4 +691,78 @@ testAll
          && all (\(Ex e) -> prop_sizeInfDag   e) es
          && all (\(Ex e) -> prop_simplifyEval e) es
          && all (\(Ex e) -> prop_simplifyDag  e) es
+         && checkIlog2
+
+
+
+--------------------------------------------------------------------------------
+-- * Programs with excessive sharing
+--------------------------------------------------------------------------------
+
+intSize :: Num a => a
+intSize = 32
+
+-- | Count leading zeros
+-- (Based on an algorithm in Hacker's Delight. Haskell implementation by Josef
+-- Svenningsson.)
+nlz :: Data Int32 -> Data Int32
+nlz x
+    = bitCount
+    $ complement
+    $ foldl go x
+    $ takeWhile (<intSize)
+    $ map (2^)
+    $ [(0::Integer)..]
+  where
+    go b s = b .|. (b .>>. s)
+
+-- | Integer logarithm in base 2
+-- (Based on an algorithm in Hacker's Delight. Haskell implementation by Josef
+-- Svenningsson.)
+ilog2 :: Data Int32 -> Data Int32
+ilog2 x = intSize - 1 - nlz x
+
+checkIlog2 =
+    [eval $ ilog2 $ fromInteger n | n <- [1..1100]]
+      ==
+    [floor (logBase 2 (fromInteger n)) | n <- [1..1100]]
+
+
+
+-- | Compute the maximal literal attribute for a node
+maxLitS :: Syn Feldspar atts Int32
+maxLitS (LitI i) = i
+maxLitS f        = Foldable.maximum $ fmap below f
+
+-- | Maximal literal in a Feldspar expression tree
+maxLit :: Tree Feldspar -> Int32
+maxLit = runAG maxLitS (\_ -> o) (const ())
+  -- This function is just an example of a simple function that visits all nodes
+  -- in an AST
+
+-- | Maximal literal in a Feldspar expression DAG
+maxLitDag :: Dag Feldspar -> Int32
+maxLitDag
+    = runAGDag
+        const
+        maxLitS
+        (\_ -> o)
+        (const ())
+    . renameFeld
+  -- This function is just an example of a simple function that visits all nodes
+  -- in an DAG
+
+
+
+test_nlz_tree = maxLit $ simplify $ unData $
+    ilog2 $ ilog2 $ ilog2 1000
+      -- This tree has 104644 nodes
+
+test_nlz_tree2 = maxLit $ simplify $ unData $
+    ilog2 $ ilog2 $ ilog2 $ ilog2 1000
+      -- This tree has 3348676 nodes
+
+test_nlz_Dag = maxLitDag $ simplifyDag $ unsafePerformIO $ reifyDag $ unData $
+    ilog2 $ ilog2 $ ilog2 $ ilog2 1000
+      -- This DAG has 65 nodes
 
